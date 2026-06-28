@@ -159,6 +159,7 @@ public class Vulkan {
         } catch (Throwable t) {
             net.vulkanmod.dlss.NativeBridge.LOGGER.warn("DLSS feature report failed: {}", t.toString());
         }
+
     }
 
     static void createStagingBuffers() {
