@@ -24,6 +24,11 @@ $vcvars = @(
 $env:PATH = "$env:JAVA_HOME\bin;" + ($(if ($cmake) { "$($cmake.FullName)\bin;" } else { '' })) + $env:PATH
 
 Write-Host "JAVA_HOME = $env:JAVA_HOME"
-& "$env:JAVA_HOME\bin\java.exe" -version
+# java -version writes to stderr; under ErrorActionPreference=Stop that surfaces as a
+# NativeCommandError in PS 5.1. Probe it in an isolated Continue scope.
+& {
+    $ErrorActionPreference = 'Continue'
+    try { Write-Host ((& "$env:JAVA_HOME\bin\java.exe" -version 2>&1 | Out-String).Trim()) } catch {}
+}
 if ($cmake) { Write-Host "CMake     = $($cmake.FullName)" } else { Write-Host "CMake     = (not found)" -ForegroundColor Yellow }
-if ($vcvars) { Write-Host "MSVC      = $vcvars" } else { Write-Host "MSVC      = (NOT INSTALLED — needed for native build, requires admin to install)" -ForegroundColor Yellow }
+if ($vcvars) { Write-Host "MSVC      = $vcvars" } else { Write-Host "MSVC      = (NOT INSTALLED - needed for native build, requires admin to install)" -ForegroundColor Yellow }

@@ -6,7 +6,7 @@ Vanilla Minecraft is OpenGL, and DLSS cannot touch OpenGL - it needs Vulkan or D
 
 > **What actually works today: the foundation.** A VulkanMod 1.21.11 fork that boots Minecraft on the Vulkan renderer, plus a self-contained native glue DLL (`mcdlss_native.dll`, MSVC, static CRT) that loads inside the running game and round-trips across the JNI boundary before the title screen, with an ABI handshake and graceful fallback to plain VulkanMod if the native side is missing. The entire proprietary supply chain is in place and signature-verified: Streamline 2.12.0 (`sl.interposer`, `sl.dlss`, `sl.dlss_g`, `sl.reflex`, all Authenticode `CN=NVIDIA Corporation`) and the NGX models (`nvngx_dlss` 310.7 SR, `nvngx_dlssg` FG, `nvngx_dlssd` RR). The Java↔C++ spine the whole project hangs off is proven end to end.
 
-> **Honest status: DLSS does not upscale or generate frames yet.** This is early. What's done and verified is Phase 0 - the renderer base and the native bridge. Streamline init, motion vectors, jitter, the DLSS-SR evaluate path, Reflex markers, and Frame Generation are the next phases and are **not** working in this build. None of the "FPS goes up" payoff exists yet; what exists is the hard plumbing that everything else needs to stand on, built and tested one verifiable step at a time. Treat this as an ambitious, in-progress systems project, not a finished mod.
+> **Honest status: DLSS does not upscale or generate frames yet.** This is early. What's done and verified is Phases 0-1 - the renderer base, the native bridge, and Streamline initializing against VulkanMod's Vulkan with a live feature-support report (SR / Frame Gen / Reflex all detected as supported on the test GPU). Motion vectors, jitter, the DLSS-SR evaluate path, Reflex markers, and Frame Generation are the next phases and are **not** working in this build. None of the "FPS goes up" payoff exists yet; what exists is the hard plumbing that everything else needs to stand on, built and tested one verifiable step at a time. Treat this as an ambitious, in-progress systems project, not a finished mod.
 
 ---
 
@@ -73,7 +73,7 @@ The whole trick is that Streamline's interposer has to be the Vulkan library the
 One phase at a time; the game must build and launch after each one. Honest status:
 
 - [x] **Phase 0 — Renderer base + native bridge.** VulkanMod 1.21.11 fork builds and runs; `mcdlss_native.dll` loads in-game; JNI round-trip + ABI check verified live. *Done.*
-- [ ] **Phase 1 — Streamline init.** `slInit` against VulkanMod's Vulkan via the interposer; feature-support report for DLSS / DLSS-G / Reflex.
+- [x] **Phase 1 — Streamline init.** `slInit` against VulkanMod's Vulkan (Streamline 2.12.0), plugins loaded (sl.common/dlss/dlss_g/reflex/pcl), and a live feature-support report. On the test box: **DLSS-SR, Frame Generation, and Reflex all report SUPPORTED**; `slShutdown` verified clean on graceful exit. *Done.* (The interposer-as-Vulkan-loader redirect, needed only for the evaluate/present hooks, is deferred to Phase 3/5; init + feature queries use direct linkage to `sl.interposer.lib`.)
 - [ ] **Phase 2 — Depth + motion vectors + jitter.** The temporal inputs DLSS lives on. Camera-only MVs first, then per-entity; debug visualizations early. This is the make-or-break part.
 - [ ] **Phase 3 — DLSS Super Resolution.** Low-res world pass, tag + evaluate, composite, HUD on top, quality presets incl. DLAA.
 - [ ] **Phase 4 — Reflex.** Mandatory prerequisite for Frame Gen; markers mapped onto the tick/render/present loop.

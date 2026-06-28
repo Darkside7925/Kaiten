@@ -23,12 +23,25 @@ public final class NativeBridge {
     public static final Logger LOGGER = LogManager.getLogger("VulkanMod-DLSS");
 
     /** Must match MCDLSS_ABI_VERSION in native/include/mcdlss.h. Bumped on any JNI signature change. */
-    public static final int EXPECTED_ABI_VERSION = 1;
+    public static final int EXPECTED_ABI_VERSION = 2;
 
     private static final String LIB_NAME = "mcdlss_native";
 
+    // Streamline feature ids — must match sl_core_types.h.
+    public static final int FEATURE_DLSS   = 0;     // Super Resolution
+    public static final int FEATURE_REFLEX = 3;
+    public static final int FEATURE_PCL    = 4;     // PC Latency
+    public static final int FEATURE_DLSS_G = 1000;  // Frame Generation
+
     private static boolean loaded = false;
     private static String loadError = null;
+    private static Path nativeDir = null;
+
+    private static boolean streamlineInitialized = false;
+    // Per-feature support, populated by reportFeatures().
+    public static boolean dlssSupported = false;
+    public static boolean frameGenSupported = false;
+    public static boolean reflexSupported = false;
 
     private NativeBridge() {}
 
@@ -39,6 +52,23 @@ public final class NativeBridge {
 
     /** Returns the native library's ABI version, validated against {@link #EXPECTED_ABI_VERSION}. */
     public static native int abiVersion();
+
+    // --- Phase 1 native methods (Streamline) — only present when the DLL is built with Streamline ---
+
+    /** slInit against Vulkan. pluginDir = folder holding sl.*.dll. Returns sl::Result (0 = eOk). */
+    public static native int slInitNative(String pluginDir, int logLevel);
+
+    /** slIsFeatureSupported for the given feature + VkPhysicalDevice handle (0 = no adapter). 0 = supported. */
+    public static native int slIsFeatureSupportedNative(int feature, long vkPhysicalDevice);
+
+    /** Human-readable slGetFeatureRequirements summary (driver/os/flags/queues) for the feature. */
+    public static native String slFeatureRequirementsNative(int feature);
+
+    /** Maps an sl::Result code to its enum name. */
+    public static native String slResultNameNative(int code);
+
+    /** slShutdown. Returns sl::Result (0 = eOk). */
+    public static native int slShutdownNative();
 
     /**
      * Attempts to load {@code mcdlss_native.dll}. Idempotent. Search order:
@@ -56,6 +86,11 @@ public final class NativeBridge {
         try {
             Path explicit = locate();
             if (explicit != null) {
+                nativeDir = explicit.toAbsolutePath().getParent();
+                // Preload Streamline's interposer (if staged next to us) so the OS loader can
+                // satisfy mcdlss_native.dll's import of the SL core API. Best-effort: a Phase 0
+                // (Streamline-less) DLL has no such import and this is simply skipped.
+                preloadIfPresent(nativeDir, "sl.interposer.dll");
                 System.load(explicit.toAbsolutePath().toString());
                 LOGGER.info("Loaded native library: {}", explicit.toAbsolutePath());
             } else {
@@ -116,7 +151,93 @@ public final class NativeBridge {
         return System.mapLibraryName(LIB_NAME);
     }
 
+    private static void preloadIfPresent(Path dir, String dll) {
+        if (dir == null) return;
+        Path p = dir.resolve(dll);
+        if (Files.isRegularFile(p)) {
+            try {
+                System.load(p.toAbsolutePath().toString());
+                LOGGER.info("Preloaded {}", p.getFileName());
+            } catch (Throwable t) {
+                LOGGER.warn("Preload of {} failed: {}", dll, t.toString());
+            }
+        }
+    }
+
+    // --- Phase 1: Streamline lifecycle (all best-effort; failure → plain VulkanMod) ---
+
+    /** Initializes Streamline (slInit). Call early, before the Vulkan device is created. */
+    public static synchronized void initStreamline() {
+        if (!loaded || streamlineInitialized) return;
+        try {
+            String pluginDir = (nativeDir != null) ? nativeDir.toString() : "";
+            int r = slInitNative(pluginDir, /* LogLevel.eDefault */ 1);
+            if (r == 0) {
+                streamlineInitialized = true;
+                LOGGER.info("Streamline initialized (SDK 2.12.0, Vulkan).");
+            } else {
+                LOGGER.warn("Streamline init failed: {} — DLSS disabled.", resultName(r));
+            }
+        } catch (UnsatisfiedLinkError e) {
+            LOGGER.warn("Native library built without Streamline — DLSS disabled.");
+        } catch (Throwable t) {
+            LOGGER.warn("Streamline init error: {} — DLSS disabled.", t.toString());
+        }
+    }
+
+    /**
+     * Queries and logs which DLSS features the current adapter supports.
+     * Call after the Vulkan device exists, passing VkPhysicalDevice.address().
+     */
+    public static synchronized void reportFeatures(long vkPhysicalDevice) {
+        if (!streamlineInitialized) return;
+        try {
+            dlssSupported     = checkFeature("DLSS Super Resolution", FEATURE_DLSS,   vkPhysicalDevice);
+            reflexSupported   = checkFeature("Reflex",                FEATURE_REFLEX, vkPhysicalDevice);
+            frameGenSupported = checkFeature("DLSS Frame Generation", FEATURE_DLSS_G, vkPhysicalDevice);
+            checkFeature("PC Latency (PCL)", FEATURE_PCL, vkPhysicalDevice);
+            LOGGER.info("DLSS feature report — Super Resolution: {}, Frame Generation: {}, Reflex: {}",
+                    yesNo(dlssSupported), yesNo(frameGenSupported), yesNo(reflexSupported));
+        } catch (Throwable t) {
+            LOGGER.warn("DLSS feature query failed: {}", t.toString());
+        }
+    }
+
+    private static boolean checkFeature(String name, int feature, long physDev) {
+        int r = slIsFeatureSupportedNative(feature, physDev);
+        boolean ok = (r == 0);
+        String req = requirements(feature);
+        if (ok) LOGGER.info("  {}: SUPPORTED   [{}]", name, req);
+        else    LOGGER.info("  {}: unavailable ({})   [{}]", name, resultName(r), req);
+        return ok;
+    }
+
+    /** Shuts Streamline down (slShutdown). Call on game shutdown. */
+    public static synchronized void shutdownStreamline() {
+        if (!streamlineInitialized) return;
+        try {
+            int r = slShutdownNative();
+            LOGGER.info("Streamline shutdown: {}", resultName(r));
+        } catch (Throwable t) {
+            LOGGER.warn("Streamline shutdown error: {}", t.toString());
+        } finally {
+            streamlineInitialized = false;
+        }
+    }
+
+    private static String resultName(int code) {
+        try { return slResultNameNative(code); } catch (Throwable t) { return "code=" + code; }
+    }
+
+    private static String requirements(int feature) {
+        try { return slFeatureRequirementsNative(feature); } catch (Throwable t) { return "n/a"; }
+    }
+
+    private static String yesNo(boolean b) { return b ? "yes" : "no"; }
+
     public static boolean isLoaded() { return loaded; }
+
+    public static boolean isStreamlineInitialized() { return streamlineInitialized; }
 
     public static String getLoadError() { return loadError; }
 }

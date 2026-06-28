@@ -35,6 +35,8 @@ public class Initializer implements ClientModInitializer {
 			NativeBridge.LOGGER.info(NativeBridge.hello("VulkanMod " + VERSION));
 			NativeBridge.LOGGER.info("Native ABI version: {} (expected {})",
 					NativeBridge.abiVersion(), NativeBridge.EXPECTED_ABI_VERSION);
+			// Phase 1: initialize Streamline early, before the Vulkan device is created.
+			NativeBridge.initStreamline();
 		}
 
 		var configPath = FabricLoader.getInstance()

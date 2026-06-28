@@ -152,6 +152,13 @@ public class Vulkan {
         createCommandPool();
 
         setupDepthFormat();
+
+        // Phase 1: device exists — report which DLSS features this adapter supports.
+        try {
+            net.vulkanmod.dlss.NativeBridge.reportFeatures(DeviceManager.physicalDevice.address());
+        } catch (Throwable t) {
+            net.vulkanmod.dlss.NativeBridge.LOGGER.warn("DLSS feature report failed: {}", t.toString());
+        }
     }
 
     static void createStagingBuffers() {
@@ -168,6 +175,14 @@ public class Vulkan {
 
     public static void cleanUp() {
         vkDeviceWaitIdle(DeviceManager.vkDevice);
+
+        // Phase 1: shut Streamline down before tearing down the Vulkan device.
+        try {
+            net.vulkanmod.dlss.NativeBridge.shutdownStreamline();
+        } catch (Throwable t) {
+            net.vulkanmod.dlss.NativeBridge.LOGGER.warn("Streamline shutdown failed: {}", t.toString());
+        }
+
         vkDestroyCommandPool(DeviceManager.vkDevice, commandPool, null);
         vkDestroyFence(DeviceManager.vkDevice, immediateFence, null);
 
