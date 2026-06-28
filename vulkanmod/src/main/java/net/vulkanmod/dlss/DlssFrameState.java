@@ -2,6 +2,7 @@ package net.vulkanmod.dlss;
 
 import com.mojang.blaze3d.platform.Window;
 import net.minecraft.client.Minecraft;
+import net.vulkanmod.vulkan.util.MappedBuffer;
 import org.joml.Matrix4f;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -47,6 +48,20 @@ public final class DlssFrameState {
     private static final float[] tmpCur = new float[16];
     private static final float[] tmpPrev = new float[16];
 
+    // GPU-facing copies for the UBO suppliers (mat4 = 64 bytes, vec2 = 8 bytes).
+    public static final MappedBuffer invCurrentVPBuf = new MappedBuffer(16 * 4);
+    public static final MappedBuffer previousVPBuf   = new MappedBuffer(16 * 4);
+    public static final MappedBuffer mvScaleBuf      = new MappedBuffer(2 * 4);
+    private static final Matrix4f invTmp = new Matrix4f();
+
+    static {
+        // Initialize to identity / unit scale so the overlay never reads garbage before frame 1.
+        new Matrix4f().get(invCurrentVPBuf.buffer.asFloatBuffer());
+        new Matrix4f().get(previousVPBuf.buffer.asFloatBuffer());
+        mvScaleBuf.putFloat(0, 1.0f);
+        mvScaleBuf.putFloat(4, 1.0f);
+    }
+
     /** Master switch — when false (default for now) nothing here affects rendering. */
     public static boolean enabled = false;
     /** Whether the computed jitter should actually be applied to the projection (Phase 3+). */
@@ -73,6 +88,7 @@ public final class DlssFrameState {
         // Roll the view-projection: this frame's "previous" is last frame's "current".
         if (currentSetThisFrame) {
             previousViewProj.set(currentViewProj);
+            previousViewProj.get(previousVPBuf.buffer.asFloatBuffer());   // GPU copy
             hasPrevious = true;
         }
         currentSetThisFrame = false;
@@ -108,6 +124,10 @@ public final class DlssFrameState {
         // VP = P * MV
         currentViewProj.set(projection).mul(modelView);
         currentSetThisFrame = true;
+
+        // GPU copy: inverse of the current view-projection (for world reconstruction).
+        invTmp.set(currentViewProj).invert();
+        invTmp.get(invCurrentVPBuf.buffer.asFloatBuffer());
 
         if (hasPrevious) {
             currentViewProj.get(tmpCur);

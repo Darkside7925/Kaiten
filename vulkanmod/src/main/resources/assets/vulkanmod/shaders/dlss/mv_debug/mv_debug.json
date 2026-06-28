@@ -1,0 +1,10 @@
+{
+    "samplers": [],
+    "UBOs": [
+        { "type": "fragment", "binding": 0, "fields": [
+            { "name": "DlssInvCurrentVP", "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
+            { "name": "DlssPrevVP", "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
+            { "name": "DlssMvScale", "type": "float", "count": 2, "values": [ 1.0, 1.0 ] }
+        ] }
+    ]
+}

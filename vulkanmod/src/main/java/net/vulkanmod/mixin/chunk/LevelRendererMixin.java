@@ -104,6 +104,13 @@ public abstract class LevelRendererMixin {
         this.projection = projection;
     }
 
+    @Inject(method = "renderLevel", at = @At("RETURN"))
+    private void dlssDebugOverlay(GraphicsResourceAllocator graphicsResourceAllocator, DeltaTracker deltaTracker,
+                                  boolean bl, Camera camera, Matrix4f modelView, Matrix4f projection, Matrix4f matrix4f,
+                                  GpuBufferSlice gpuBufferSlice, Vector4f vector4f, boolean bl2, CallbackInfo ci) {
+        net.vulkanmod.dlss.DlssDebugOverlay.render();
+    }
+
     @Overwrite
     private ChunkSectionsToRender prepareChunkRenders(Matrix4fc matrix4fc, double camX, double camY, double camZ) {
         this.camX = camX;
