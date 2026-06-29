@@ -326,6 +326,10 @@ public class VulkanImage {
                 srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
                 sourceStage = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
             }
+            case VK_IMAGE_LAYOUT_GENERAL -> {   // DLSS UAV resources
+                srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+                sourceStage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+            }
             default -> throw new RuntimeException("Unexpected value:" + image.currentLayout);
         }
 
@@ -352,6 +356,10 @@ public class VulkanImage {
             }
             case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR -> {
                 destinationStage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+            }
+            case VK_IMAGE_LAYOUT_GENERAL -> {   // DLSS UAV resources
+                dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+                destinationStage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
             }
             default -> throw new RuntimeException("Unexpected value:" + newLayout);
         }

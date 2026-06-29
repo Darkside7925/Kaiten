@@ -70,7 +70,9 @@ public final class DlssFrameState {
     private static final Logger LOGGER = LogManager.getLogger("VulkanMod-DLSS");
     private static final boolean DEBUG = Boolean.getBoolean("mcdlss.debug");
     private static final boolean GPU_TEST = Boolean.getBoolean("mcdlss.gputest");
+    private static final boolean EVAL_TEST = Boolean.getBoolean("mcdlss.evaltest");
     private static boolean gpuTestDone = false;
+    private static boolean evalTestDone = false;
 
     /**
      * Call once at the start of each frame, before the world's view-projection is set.
@@ -100,6 +102,10 @@ public final class DlssFrameState {
         if (GPU_TEST && !gpuTestDone && frameCounter >= 3) {
             gpuTestDone = true;
             DlssGpuTest.run();
+        }
+        if (EVAL_TEST && !evalTestDone && frameCounter >= 5) {
+            evalTestDone = true;
+            DlssEvaluateValidator.run();
         }
 
         // Advance Halton jitter. Index 0 of Halton is 0; start at 1.

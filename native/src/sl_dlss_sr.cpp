@@ -118,3 +118,92 @@ Java_net_vulkanmod_dlss_NativeBridge_slDlssOptimalSettingsNative(JNIEnv* env, jc
 }
 
 } // extern "C"
+
+// --- DLSS Super Resolution evaluate (synthetic validation harness) ---
+
+static sl::Resource vkResource(jlong image, jlong view, jint layout, jint w, jint h, jint fmt) {
+    sl::Resource r(sl::ResourceType::eTex2d, reinterpret_cast<void*>(image), nullptr,
+                   reinterpret_cast<void*>(view), (uint32_t)layout);
+    r.width = (uint32_t)w; r.height = (uint32_t)h; r.nativeFormat = (uint32_t)fmt;
+    r.mipLevels = 1; r.arrayLayers = 1;
+    return r;
+}
+
+static void setRowMajor(sl::float4x4& m, const float* a) {
+    for (int i = 0; i < 4; ++i) m.row[i] = sl::float4(a[i*4+0], a[i*4+1], a[i*4+2], a[i*4+3]);
+}
+
+extern "C" {
+
+/**
+ * int NativeBridge.slDlssEvaluateNative(viewport, frameIndex, cmdBuffer, mode,
+ *     outW, outH, renderW, renderH, handles[8], layouts[4], formats[4], consts[40])
+ * Tags the 4 SR resources, sets options + constants, and runs slEvaluateFeature(kFeatureDLSS).
+ * handles: colorInImg,colorInView, colorOutImg,colorOutView, depthImg,depthView, mvImg,mvView
+ * layouts/formats order: colorIn, colorOut, depth, mv
+ * consts: [0..15]=cameraViewToClip(row-major) [16..31]=clipToPrevClip jx jy mvsx mvsy near far fov aspect
+ */
+JNIEXPORT jint JNICALL
+Java_net_vulkanmod_dlss_NativeBridge_slDlssEvaluateNative(JNIEnv* env, jclass,
+        jint viewport, jint frameIndex, jlong cmdBuffer, jint mode,
+        jint outW, jint outH, jint renderW, jint renderH,
+        jlongArray jHandles, jintArray jLayouts, jintArray jFormats, jfloatArray jConsts) {
+    jlong h[8]; env->GetLongArrayRegion(jHandles, 0, 8, h);
+    jint lay[4]; env->GetIntArrayRegion(jLayouts, 0, 4, lay);
+    jint fmt[4]; env->GetIntArrayRegion(jFormats, 0, 4, fmt);
+    jfloat c[40]; env->GetFloatArrayRegion(jConsts, 0, 40, c);
+
+    sl::ViewportHandle vp(viewport);
+    sl::CommandBuffer* cmd = reinterpret_cast<sl::CommandBuffer*>(cmdBuffer);
+
+    sl::DLSSOptions opt{};
+    opt.mode = (sl::DLSSMode)mode;
+    opt.outputWidth = (uint32_t)outW; opt.outputHeight = (uint32_t)outH;
+    sl::Result r = slDLSSSetOptions(vp, opt);
+    if (r != sl::Result::eOk) { std::fprintf(stderr, "[mcdlss] slDLSSSetOptions=%d\n", (int)r); return (jint)r; }
+
+    uint32_t fi = (uint32_t)frameIndex;
+    sl::FrameToken* token = nullptr;
+    r = slGetNewFrameToken(token, &fi);
+    if (r != sl::Result::eOk) { std::fprintf(stderr, "[mcdlss] slGetNewFrameToken=%d\n", (int)r); return (jint)r; }
+
+    sl::Constants consts{};
+    setRowMajor(consts.cameraViewToClip, &c[0]);
+    setRowMajor(consts.clipToPrevClip, &c[16]);
+    consts.jitterOffset = sl::float2(c[32], c[33]);
+    consts.mvecScale = sl::float2(c[34], c[35]);
+    consts.cameraNear = c[36]; consts.cameraFar = c[37];
+    consts.cameraFOV = c[38]; consts.cameraAspectRatio = c[39];
+    consts.cameraPos = sl::float3(0, 0, 0);
+    consts.cameraUp = sl::float3(0, 1, 0);
+    consts.cameraRight = sl::float3(1, 0, 0);
+    consts.cameraFwd = sl::float3(0, 0, 1);
+    consts.depthInverted = sl::Boolean::eFalse;
+    consts.cameraMotionIncluded = sl::Boolean::eTrue;
+    consts.motionVectors3D = sl::Boolean::eFalse;
+    consts.reset = sl::Boolean::eFalse;
+    r = slSetConstants(consts, *token, vp);
+    if (r != sl::Result::eOk) { std::fprintf(stderr, "[mcdlss] slSetConstants=%d\n", (int)r); return (jint)r; }
+
+    sl::Resource colorIn  = vkResource(h[0], h[1], lay[0], renderW, renderH, fmt[0]);
+    sl::Resource colorOut = vkResource(h[2], h[3], lay[1], outW, outH, fmt[1]);
+    sl::Resource depth    = vkResource(h[4], h[5], lay[2], renderW, renderH, fmt[2]);
+    sl::Resource mvec     = vkResource(h[6], h[7], lay[3], renderW, renderH, fmt[3]);
+    sl::Extent renderExt{0, 0, (uint32_t)renderW, (uint32_t)renderH};
+    sl::Extent outExt{0, 0, (uint32_t)outW, (uint32_t)outH};
+    sl::ResourceTag tags[] = {
+        sl::ResourceTag(&colorIn,  sl::kBufferTypeScalingInputColor,  sl::ResourceLifecycle::eOnlyValidNow, &renderExt),
+        sl::ResourceTag(&colorOut, sl::kBufferTypeScalingOutputColor, sl::ResourceLifecycle::eOnlyValidNow, &outExt),
+        sl::ResourceTag(&depth,    sl::kBufferTypeDepth,              sl::ResourceLifecycle::eValidUntilPresent, &renderExt),
+        sl::ResourceTag(&mvec,     sl::kBufferTypeMotionVectors,      sl::ResourceLifecycle::eOnlyValidNow, &renderExt),
+    };
+    r = slSetTag(vp, tags, 4, cmd);
+    if (r != sl::Result::eOk) { std::fprintf(stderr, "[mcdlss] slSetTag=%d\n", (int)r); return (jint)r; }
+
+    const sl::BaseStructure* inputs[] = { &vp };
+    r = slEvaluateFeature(sl::kFeatureDLSS, *token, inputs, 1, cmd);
+    if (r != sl::Result::eOk) std::fprintf(stderr, "[mcdlss] slEvaluateFeature=%d\n", (int)r);
+    return (jint)r;
+}
+
+} // extern "C"

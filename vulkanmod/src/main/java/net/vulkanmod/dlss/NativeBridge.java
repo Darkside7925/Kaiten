@@ -86,6 +86,11 @@ public final class NativeBridge {
     /** Newline-joined Vulkan 1.2/1.3 feature names DLSS requires (diagnostic). */
     public static native String slDlssFeaturesNative();
 
+    /** Tags SR resources, sets options+constants, runs slEvaluateFeature(DLSS). Returns sl::Result. */
+    public static native int slDlssEvaluateNative(int viewport, int frameIndex, long cmdBuffer, int mode,
+            int outW, int outH, int renderW, int renderH,
+            long[] handles, int[] layouts, int[] formats, float[] consts);
+
     /** Device extensions DLSS needs, for injection into VulkanMod's vkCreateDevice. Empty if unavailable. */
     public static synchronized java.util.List<String> dlssDeviceExtensions() {
         if (!streamlineInitialized) return java.util.List.of();
