@@ -16,6 +16,7 @@
 #include "mcdlss.h"
 #include "sl.h"
 #include "sl_dlss.h"
+#include "sl_matrix_helpers.h"
 
 namespace sl {
 // Layout-compatible replica of sl_helpers_vk.h's VulkanInfo (handles are pointers).
@@ -170,6 +171,9 @@ Java_net_vulkanmod_dlss_NativeBridge_slDlssEvaluateNative(JNIEnv* env, jclass,
     sl::Constants consts{};
     setRowMajor(consts.cameraViewToClip, &c[0]);
     setRowMajor(consts.clipToPrevClip, &c[16]);
+    // Derive the inverse matrices SL also wants (avoids 'invalid' constant warnings).
+    sl::matrixFullInvert(consts.clipToCameraView, consts.cameraViewToClip);
+    sl::matrixFullInvert(consts.prevClipToClip, consts.clipToPrevClip);
     consts.jitterOffset = sl::float2(c[32], c[33]);
     consts.mvecScale = sl::float2(c[34], c[35]);
     consts.cameraNear = c[36]; consts.cameraFar = c[37];
