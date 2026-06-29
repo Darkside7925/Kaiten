@@ -121,6 +121,50 @@ public final class NativeBridge {
 
     private static boolean vulkanInfoSet = false;
 
+    // --- Phase 4 (Reflex) native methods ---
+    public static native int slReflexSetOptionsNative(int mode, int frameLimitUs);
+    public static native int slReflexSleepNative(int frameIndex);
+    public static native int slPclMarkerNative(int marker, int frameIndex);
+    public static native String slReflexStateNative();
+
+    // sl::ReflexMode + sl::PCLMarker values.
+    public static final int REFLEX_OFF = 0, REFLEX_LOW_LATENCY = 1, REFLEX_LOW_LATENCY_BOOST = 2;
+    public static final int PCL_SIM_START = 0, PCL_SIM_END = 1, PCL_RENDER_SUBMIT_START = 2,
+            PCL_RENDER_SUBMIT_END = 3, PCL_PRESENT_START = 4, PCL_PRESENT_END = 5, PCL_LATENCY_PING = 8;
+
+    private static boolean reflexEnabled = false;
+
+    /** Enable Reflex low-latency (after device set). Logs the resulting state. Best-effort. */
+    public static synchronized void setupReflex(int mode) {
+        if (!vulkanInfoSet || !reflexSupported) return;
+        try {
+            int r = slReflexSetOptionsNative(mode, 0);
+            if (r == 0) {
+                reflexEnabled = (mode != REFLEX_OFF);
+                LOGGER.info("Reflex options set (mode={}); state: {}", mode, slReflexStateNative());
+            } else {
+                LOGGER.warn("Reflex setOptions failed: {}", resultName(r));
+            }
+        } catch (Throwable t) {
+            LOGGER.warn("Reflex setup error: {}", t.toString());
+        }
+    }
+
+    /** Reflex sleep + simulation-start marker — call at the very start of a frame. Best-effort. */
+    public static void reflexFrameStart(int frameIndex) {
+        if (!reflexEnabled) return;
+        try {
+            slReflexSleepNative(frameIndex);
+            slPclMarkerNative(PCL_SIM_START, frameIndex);
+        } catch (Throwable ignored) {}
+    }
+
+    /** Place a PCL latency marker. Best-effort. */
+    public static void reflexMarker(int marker, int frameIndex) {
+        if (!reflexEnabled) return;
+        try { slPclMarkerNative(marker, frameIndex); } catch (Throwable ignored) {}
+    }
+
     /**
      * Attempts to load {@code mcdlss_native.dll}. Idempotent. Search order:
      * <ol>
@@ -278,6 +322,9 @@ public final class NativeBridge {
             LOGGER.warn("slSetVulkanInfo error: {}", t.toString());
             return;
         }
+
+        // Phase 4: enable Reflex low-latency (mandatory dependency for Frame Generation).
+        setupReflex(REFLEX_LOW_LATENCY);
 
         if (!dlssSupported) return;
         try {

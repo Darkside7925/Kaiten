@@ -39,7 +39,8 @@ if (MCDLSS_WITH_STREAMLINE)
     list(APPEND MCDLSS_SOURCES
         src/sl_manager.cpp
         src/sl_dlss_sr.cpp
-        # src/sl_dlss_g.cpp  src/sl_reflex.cpp  src/tagging.cpp  (added per phase)
+        src/sl_reflex.cpp
+        # src/sl_dlss_g.cpp  src/tagging.cpp  (added per phase)
     )
 endif()
 

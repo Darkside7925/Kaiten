@@ -87,6 +87,9 @@ public final class DlssFrameState {
     public static void beginFrame(int width, int height) {
         frameCounter++;
 
+        // Phase 4: Reflex sleep + simulation-start marker at the very top of the frame.
+        NativeBridge.reflexFrameStart((int) frameCounter);
+
         // Roll the view-projection: this frame's "previous" is last frame's "current".
         if (currentSetThisFrame) {
             previousViewProj.set(currentViewProj);
