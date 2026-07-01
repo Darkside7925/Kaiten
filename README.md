@@ -8,12 +8,13 @@
 
 | Feature | Status | Details |
 |---------|--------|---------|
-| **DLSS Super Resolution** | ✅ | DLAA (AI anti-aliasing) at native resolution. Evaluates on every frame, composites back into the swapchain. Live in-game. |
-| **DLSS Frame Generation** | ✅ | Multi-Frame Gen (2×/3×/4×). Tags resources each frame, SL interposer injects interpolated frames at present. `status=0` verified across 178k+ frame sessions. |
+| **DLSS Super Resolution** | ✅ | Full DLSS upscaling (Ultra Perf through DLAA). World renders at low res, DLSS upscales to native. Quality presets visibly change FPS and image quality. |
+| **DLSS Frame Generation** | 🟡 | Multi-Frame Gen (2x/3x/4x) supported. Requires `-Dmcdlss.fg=true` to enable (opt-in; interposer shows status=0 inactive by default). |
 | **Reflex** | ✅ | Low-latency mode active, PCL markers + sleep wired into frame loop. |
-| **Settings UI** | ✅ | Full Kaiten tab in VulkanMod's Video Settings sidebar. DLSS on/off, quality preset, FG multiplier, Reflex mode. Per-GPU JSON profiles. |
+| **Settings UI** | ✅ | Full Kaiten tab in VulkanMod's Video Settings sidebar. DLSS/FSR toggle, quality preset, backend selection, per-GPU JSON profiles. |
+| **AMD FSR 1.0** | ✅ | Spatial upscaler (EASU + RCAS compute shaders) for non-NVIDIA GPUs. Same quality presets and low-res render pass pipeline. |
 | **Jitter + camera tracking** | ✅ | Halton(2,3) jitter, frame-to-frame view-projection capture, real-time vpDelta monitoring. |
-| **Actual upscaling** | ⚠️ | DLAA only (AI-AA at native res, no performance boost). True lower-res → native upscaling needs a separate low-res render pass — that's the next step for the "FPS goes up" payoff. |
+| **True upscaling** | ✅ | Low-res render pass + DLSS/FSR upscale to native. FPS boost scales with quality preset. |
 
 ```mermaid
 graph TD
@@ -62,14 +63,16 @@ On launch you'll see:
 ## Architecture
 
 ```
-net.kaiten.DlssSuperResolution  ──  in-frame DLSS evaluate + composite
-net.kaiten.DlssFrameGeneration  ──  FG resource tagging (present interception)
-net.kaiten.DlssFrameState       ──  jitter, view-projection, camera tracking
-net.kaiten.NativeBridge         ──  JNI spine (60+ native methods)
-net.kaiten.config.KaitenConfig  ──  per-GPU JSON profiles
-net.kaiten.config.KaitenOptions ──  VulkanMod sidebar settings
+net.kaiten.DlssSuperResolution  --  in-frame DLSS evaluate + upscale composite
+net.kaiten.DlssFrameGeneration  --  FG resource tagging (present interception)
+net.kaiten.DlssFrameState       --  jitter, view-projection, camera tracking
+net.kaiten.KaitenRenderState    --  low-res framebuffer, dual-pass pipeline
+net.kaiten.KaitenFSR            --  AMD FSR 1.0 (EASU + RCAS compute shaders)
+net.kaiten.NativeBridge         --  JNI spine (60+ native methods)
+net.kaiten.config.KaitenConfig  --  per-GPU JSON profiles
+net.kaiten.config.KaitenOptions --  VulkanMod sidebar settings
 
-native/src/sl_dlss_sr.cpp       ──  slDLSSSetOptions, slAllocateResources, evaluate
+native/src/sl_dlss_sr.cpp       --  slDLSSSetOptions, slEvaluateFeature
 native/src/sl_dlss_g.cpp        ──  slDLSSGSetOptions, tag, shared frame token
 native/src/sl_manager.cpp       ──  slInit, feature queries, shutdown
 native/src/sl_reflex.cpp        ──  Reflex sleep + PCL markers
@@ -85,10 +88,10 @@ native/src/sl_reflex.cpp        ──  Reflex sleep + PCL markers
 
 ## Known Issues
 
-- **SR: DLAA only.** No FPS boost until the low-res render pass is implemented. Quality presets in settings UI are recorded but force DLAA mode.
-- **Shutdown crash.** `sl.common.dll` access violation during `slShutdown()` — Streamline SDK issue, not gameplay-affecting.
-- **FG: numPresented=0.** Frame Generation works via present interception but the counter stays 0 (cosmetic).
-- **No motion vectors.** MV pass currently passes a zero buffer — no per-pixel temporal reprojection yet.
+- **FG: numPresented=0.** Frame Generation interposer is configured but shows status=0 (inactive). Requires separate investigation. Gated behind `-Dmcdlss.fg=true` JVM flag.
+- **Shutdown crash.** `sl.common.dll` access violation during `slShutdown()` -- Streamline SDK issue, not gameplay-affecting.
+- **No motion vectors.** MV pass currently passes a zero buffer -- no per-pixel temporal reprojection yet. Ghosting may occur under fast motion.
+- **Screen tearing.** VSync is off (FG requirement). Tearing expected at high frame rates without FG active.
 
 ## License
 
