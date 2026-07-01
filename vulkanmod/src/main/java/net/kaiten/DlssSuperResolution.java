@@ -91,6 +91,14 @@ public final class DlssSuperResolution {
                     mode, w, h, renderW, renderH, handles, layouts, formats, consts);
 
             if (r != 0) {
+                int errCode = r;
+                // eErrorNGXFailed (15) can happen transiently during mode/resize
+                // switches when the swapchain briefly becomes 10x10. Skip this
+                // frame instead of permanently disabling DLSS.
+                if (errCode == 15) {
+                    LOGGER.warn("[DLSS-SR] evaluate NGXFailed (transient) - frame {}, retrying next frame", DlssFrameState.frameCounter());
+                    return; // do NOT set failed=true
+                }
                 failed = true;
                 LOGGER.error("[DLSS-SR] evaluate failed ({}) - disabling in-frame DLSS.",
                         safeName(r));
@@ -182,7 +190,13 @@ public final class DlssSuperResolution {
             int r = NativeBridge.slDlssEvaluateNative(0, (int) DlssFrameState.frameCounter(), cmd.address(),
                     mode, displayW, displayH, renderW, renderH, handles, layouts, formats, consts);
 
-            if (r != 0) { failed = true; LOGGER.error("[DLSS-SR] upscale failed ({})", safeName(r)); return; }
+            if (r != 0) {
+                int errCode = r;
+                if (errCode == 15) { // eErrorNGXFailed - transient during resize/mode switch
+                    LOGGER.warn("[DLSS-SR] upscale NGXFailed (transient) - retrying next frame");
+                    return;
+                }
+                failed = true; LOGGER.error("[DLSS-SR] upscale failed ({})", safeName(r)); return; }
 
             try (MemoryStack stack = stackPush()) {
                 output.transitionImageLayout(stack, cmd, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
