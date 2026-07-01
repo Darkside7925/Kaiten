@@ -320,7 +320,11 @@ public class SwapChain extends Framebuffer {
     }
 
     public VulkanImage getColorAttachment() {
-        return this.swapChainImages.get(Renderer.getCurrentImage());
+        int idx = Renderer.getCurrentImage();
+        if (idx < 0 || idx >= this.swapChainImages.size()) {
+            idx = 0; // fallback during transient resize/init states
+        }
+        return this.swapChainImages.get(idx);
     }
 
     public long getColorAttachmentView() {
