@@ -14,12 +14,13 @@ loom {
 	accessWidenerPath = file("src/main/resources/vulkanmod.accesswidener")
 
 	// Pass DLSS system properties to the Minecraft client JVM.
-	// Enable with: -Dmcdlss.fg=true  (Frame Generation)
+	// Enable with: -Dmcdlss.fg=true  (Frame Generation - not yet working, interposer inactive)
 	//              -Dmcdlss.dlss=true (DLSS Super Resolution)
+	//              -Dmcdlss.debug=true (per-frame debug logs - DISABLE for performance)
 	runs {
 		client {
 			client()
-			vmArgs("-Dmcdlss.fg=true", "-Dmcdlss.dlss=true", "-Dmcdlss.debug=true")
+			vmArgs("-Dmcdlss.dlss=true")
 		}
 	}
 }

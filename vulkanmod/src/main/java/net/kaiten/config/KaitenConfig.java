@@ -233,8 +233,9 @@ public final class KaitenConfig {
                         activeProfile.dlssMode, backend);
             } catch (Throwable ignored) {}
 
-            // FG
-            if (activeProfile.fgEnabled && NativeBridge.frameGenSupported && NativeBridge.frameGenConfigured) {
+            // FG (gated behind -Dmcdlss.fg=true — not yet stable, interposer shows status=0)
+            boolean fgJvmEnabled = Boolean.getBoolean("mcdlss.fg");
+            if (fgJvmEnabled && activeProfile.fgEnabled && NativeBridge.frameGenSupported && NativeBridge.frameGenConfigured) {
                 net.kaiten.DlssFrameGeneration.enabled = true;
                 net.kaiten.DlssFrameGeneration.setMultiplier(activeProfile.fgMultiplier);
             } else {
