@@ -28,9 +28,10 @@ public final class DlssSuperResolution {
     public static boolean enabled = Boolean.getBoolean("mcdlss.dlss");
     private static boolean failed = false;
 
-    private static VulkanImage output;   // native-res DLSS output (UAV)
-    private static VulkanImage mvZero;    // native-res motion vectors (zero for now)
-    private static int width, height;
+    private static VulkanImage output;   // DLSS output at display resolution
+    private static VulkanImage mvZero;   // zero MV: at render resolution for upscale, display for DLAA
+    private static int width, height;    // display resolution
+    private static int renderW, renderH; // render (input) resolution for upscale
     private static long framesRun = 0;
     private static final float[] consts = new float[40];
 
@@ -159,7 +160,7 @@ public final class DlssSuperResolution {
         if (mode == NativeBridge.DLSS_DLAA) { render(cmd, outputColor, lowResDepth, displayW, displayH); return; }
 
         try {
-            ensureUpscaleTargets(displayW, displayH, outputColor.format);
+            ensureUpscaleTargets(displayW, displayH, renderW, renderH, outputColor.format);
 
             try (MemoryStack stack = stackPush()) {
                 lowResColor.transitionImageLayout(stack, cmd, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -199,15 +200,17 @@ public final class DlssSuperResolution {
         } catch (Throwable t) { failed = true; LOGGER.error("[DLSS-SR] upscale failed: {}", t.toString()); }
     }
 
-    private static void ensureUpscaleTargets(int w, int h, int colorFormat) {
-        if (output != null && width == w && height == h) return;
+    private static void ensureUpscaleTargets(int dw, int dh, int rw, int rh, int colorFormat) {
+        if (output != null && width == dw && height == dh && renderW == rw && renderH == rh) return;
         freeTargets();
-        width = w; height = h;
+        width = dw; height = dh; renderW = rw; renderH = rh;
         int outUsage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-        output = VulkanImage.builder(w, h).setFormat(colorFormat).setUsage(outUsage)
+        output = VulkanImage.builder(dw, dh).setFormat(colorFormat).setUsage(outUsage)
                 .setLinearFiltering(false).setClamp(true).createVulkanImage();
+        // MV buffer MUST match the input (render) resolution, not display resolution.
+        // DLSS reads one MV per input pixel to reproject into the output.
         int mvUsage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-        mvZero = VulkanImage.builder(w, h).setFormat(VK_FORMAT_R16G16_SFLOAT).setUsage(mvUsage)
+        mvZero = VulkanImage.builder(rw, rh).setFormat(VK_FORMAT_R16G16_SFLOAT).setUsage(mvUsage)
                 .setLinearFiltering(false).setClamp(true).createVulkanImage();
     }
 }
