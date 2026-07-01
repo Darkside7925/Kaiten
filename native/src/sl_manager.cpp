@@ -1,4 +1,4 @@
-// sl_manager.cpp — NVIDIA Streamline lifecycle + feature queries (Phase 1).
+﻿// sl_manager.cpp â€” NVIDIA Streamline lifecycle + feature queries (Phase 1).
 //
 // Compiled only when MCDLSS_WITH_STREAMLINE=ON. Links sl.interposer.lib; the SL core API
 // (slInit / slIsFeatureSupported / slGetFeatureRequirements / slShutdown) is implemented in
@@ -47,7 +47,7 @@ static const char* resultName(sl::Result r) {
     }
 }
 
-// Streamline's own diagnostics → process stderr (captured in the MC dev console).
+// Streamline's own diagnostics â†’ process stderr (captured in the MC dev console).
 static void slLogCallback(sl::LogType type, const char* msg) {
     const char* p = (type == sl::LogType::eError) ? "[SL/ERROR]"
                   : (type == sl::LogType::eWarn)  ? "[SL/WARN] "
@@ -68,7 +68,7 @@ extern "C" {
 
 // int NativeBridge.slInitNative(String pluginDir, int logLevel)
 JNIEXPORT jint JNICALL
-Java_net_vulkanmod_dlss_NativeBridge_slInitNative(JNIEnv* env, jclass, jstring jPluginDir, jint logLevel) {
+Java_net_kaiten_NativeBridge_slInitNative(JNIEnv* env, jclass, jstring jPluginDir, jint logLevel) {
     static std::wstring s_pluginDir;            // must outlive slInit's internal copy step
     s_pluginDir = jstringToWide(env, jPluginDir);
     static const wchar_t* s_paths[1];
@@ -91,7 +91,7 @@ Java_net_vulkanmod_dlss_NativeBridge_slInitNative(JNIEnv* env, jclass, jstring j
     pref.numFeaturesToLoad = (uint32_t)(sizeof(s_features) / sizeof(s_features[0]));
     pref.engine = sl::EngineType::eCustom;
     pref.engineVersion = "1.0";
-    // NGX validates projectId as a GUID — an arbitrary string fails NGX init entirely.
+    // NGX validates projectId as a GUID â€” an arbitrary string fails NGX init entirely.
     pref.projectId = "e8a3c1d7-4f2b-4a9e-bc15-9d6f0a2b3c4d";
     pref.renderAPI = sl::RenderAPI::eVulkan;
     // Manual hooking: we provide the Vulkan device via slSetVulkanInfo rather than letting
@@ -106,7 +106,7 @@ Java_net_vulkanmod_dlss_NativeBridge_slInitNative(JNIEnv* env, jclass, jstring j
 
 // int NativeBridge.slIsFeatureSupportedNative(int feature, long vkPhysicalDevice)
 JNIEXPORT jint JNICALL
-Java_net_vulkanmod_dlss_NativeBridge_slIsFeatureSupportedNative(JNIEnv*, jclass, jint feature, jlong vkPhysicalDevice) {
+Java_net_kaiten_NativeBridge_slIsFeatureSupportedNative(JNIEnv*, jclass, jint feature, jlong vkPhysicalDevice) {
     sl::AdapterInfo ai{};
     if (vkPhysicalDevice != 0) {
         ai.vkPhysicalDevice = reinterpret_cast<void*>(vkPhysicalDevice);
@@ -117,7 +117,7 @@ Java_net_vulkanmod_dlss_NativeBridge_slIsFeatureSupportedNative(JNIEnv*, jclass,
 
 // String NativeBridge.slFeatureRequirementsNative(int feature)
 JNIEXPORT jstring JNICALL
-Java_net_vulkanmod_dlss_NativeBridge_slFeatureRequirementsNative(JNIEnv* env, jclass, jint feature) {
+Java_net_kaiten_NativeBridge_slFeatureRequirementsNative(JNIEnv* env, jclass, jint feature) {
     char buf[640];
     sl::FeatureRequirements req{};
     sl::Result r = slGetFeatureRequirements((sl::Feature)feature, req);
@@ -146,13 +146,13 @@ Java_net_vulkanmod_dlss_NativeBridge_slFeatureRequirementsNative(JNIEnv* env, jc
 
 // String NativeBridge.slResultNameNative(int code)
 JNIEXPORT jstring JNICALL
-Java_net_vulkanmod_dlss_NativeBridge_slResultNameNative(JNIEnv* env, jclass, jint code) {
+Java_net_kaiten_NativeBridge_slResultNameNative(JNIEnv* env, jclass, jint code) {
     return env->NewStringUTF(resultName((sl::Result)code));
 }
 
 // int NativeBridge.slShutdownNative()
 JNIEXPORT jint JNICALL
-Java_net_vulkanmod_dlss_NativeBridge_slShutdownNative(JNIEnv*, jclass) {
+Java_net_kaiten_NativeBridge_slShutdownNative(JNIEnv*, jclass) {
     if (!g_slInitialized) return (jint)sl::Result::eOk;
     sl::Result r = slShutdown();
     g_slInitialized = false;

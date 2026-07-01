@@ -12,6 +12,16 @@ base {
 
 loom {
 	accessWidenerPath = file("src/main/resources/vulkanmod.accesswidener")
+
+	// Pass DLSS system properties to the Minecraft client JVM.
+	// Enable with: -Dmcdlss.fg=true  (Frame Generation)
+	//              -Dmcdlss.dlss=true (DLSS Super Resolution)
+	runs {
+		client {
+			client()
+			vmArgs("-Dmcdlss.fg=true", "-Dmcdlss.dlss=true", "-Dmcdlss.debug=true")
+		}
+	}
 }
 
 dependencies {

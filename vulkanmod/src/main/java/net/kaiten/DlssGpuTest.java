@@ -1,4 +1,4 @@
-package net.vulkanmod.dlss;
+package net.kaiten;
 
 import net.vulkanmod.vulkan.texture.VulkanImage;
 import org.apache.logging.log4j.LogManager;

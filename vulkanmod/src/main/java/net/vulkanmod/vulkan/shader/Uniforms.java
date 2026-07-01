@@ -27,9 +27,9 @@ public class Uniforms {
         mat4f_uniformMap.put("MVP", VRenderSystem::getMVP);
         mat4f_uniformMap.put("TextureMat", VRenderSystem::getTextureMatrix);
 
-        // DLSS Phase 2 — motion-vector reprojection matrices (backed by DlssFrameState).
-        mat4f_uniformMap.put("DlssInvCurrentVP", () -> net.vulkanmod.dlss.DlssFrameState.invCurrentVPBuf);
-        mat4f_uniformMap.put("DlssPrevVP", () -> net.vulkanmod.dlss.DlssFrameState.previousVPBuf);
+        // DLSS Phase 2 â€” motion-vector reprojection matrices (backed by DlssFrameState).
+        mat4f_uniformMap.put("DlssInvCurrentVP", () -> net.kaiten.DlssFrameState.invCurrentVPBuf);
+        mat4f_uniformMap.put("DlssPrevVP", () -> net.kaiten.DlssFrameState.previousVPBuf);
 
         //Vec1i
         vec1i_uniformMap.put("EndPortalLayers", () -> 15);
@@ -52,7 +52,7 @@ public class Uniforms {
         vec2f_uniformMap.put("ScreenSize", VRenderSystem::getScreenSize);
         vec2f_uniformMap.put("TextureSize", VRenderSystem::getTextureSize);
         vec2f_uniformMap.put("TexelSize", VRenderSystem::getTexelSize);
-        vec2f_uniformMap.put("DlssMvScale", () -> net.vulkanmod.dlss.DlssFrameState.mvScaleBuf);
+        vec2f_uniformMap.put("DlssMvScale", () -> net.kaiten.DlssFrameState.mvScaleBuf);
 
         //Vec3
         vec3f_uniformMap.put("Light0_Direction", () -> VRenderSystem.lightDirection0);

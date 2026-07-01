@@ -1,4 +1,4 @@
-package net.vulkanmod.dlss;
+package net.kaiten;
 
 import net.vulkanmod.vulkan.texture.VulkanImage;
 import org.apache.logging.log4j.LogManager;
@@ -11,14 +11,14 @@ import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.vulkan.VK10.*;
 
 /**
- * Live in-frame DLSS Super Resolution (DLAA mode: native→native AI antialiasing, the
- * least-invasive SR variant — no render-resolution change). Runs the proven DLSS evaluate
+ * Live in-frame DLSS Super Resolution (DLAA mode: nativeâ†'native AI antialiasing, the
+ * least-invasive SR variant â€" no render-resolution change). Runs the proven DLSS evaluate
  * on the rendered frame and composites the result back. Gated by {@code -Dmcdlss.dlss}
  * (default OFF), so it cannot affect the default rendering path.
  *
  * <p>Injected at the end of the main pass (color is a render target, depth is readable).
  * Note: motion vectors are a zero buffer for now (no live depth-sampled MV pass yet), so
- * this is DLAA without motion compensation — expect ghosting under motion until the MV pass
+ * this is DLAA without motion compensation â€" expect ghosting under motion until the MV pass
  * is wired. The point of this stage is to get DLSS running on real frames end-to-end.
  */
 public final class DlssSuperResolution {
@@ -36,9 +36,30 @@ public final class DlssSuperResolution {
 
     /** Run DLSS on the rendered color (using depth), composite the result back into color. */
     public static void render(VkCommandBuffer cmd, VulkanImage color, VulkanImage depth, int w, int h) {
-        if (!enabled || failed) return;
-        if (!NativeBridge.isStreamlineInitialized() || !NativeBridge.dlssSupported) return;
-        if (!DlssFrameState.hasPreviousFrame()) return;
+        if (!enabled || failed) {
+            if (framesRun == 0 && !enabled) LOGGER.warn("[DLSS-SR] render skipped: enabled={} failed={}", enabled, failed);
+            return;
+        }
+        if (!NativeBridge.isStreamlineInitialized() || !NativeBridge.dlssSupported) {
+            if (framesRun == 0) LOGGER.warn("[DLSS-SR] render skipped: slInit={} dlssSupported={}", NativeBridge.isStreamlineInitialized(), NativeBridge.dlssSupported);
+            return;
+        }
+        if (!DlssFrameState.hasPreviousFrame()) {
+            if (framesRun == 0) LOGGER.info("[DLSS-SR] render waiting for previous frame... hasPrev={}", DlssFrameState.hasPreviousFrame());
+            return;
+        }
+
+        // Read quality mode from Kaiten profile.  NOTE: until we implement a true
+        // low-res render pass, we always evaluate in DLAA mode (AI-AA at native res).
+        // The profile mode is recorded for future use when the low-res pass exists.
+        int mode = NativeBridge.DLSS_DLAA;
+        int renderW = w, renderH = h;   // always native res — all buffers are at window size
+        try { var p = net.kaiten.config.KaitenConfig.INSTANCE.getActiveProfile(); if (p != null) {
+            int desiredMode = p.dlssMode;
+            if (desiredMode != NativeBridge.DLSS_DLAA) {
+                LOGGER.info("[DLSS-SR] profile mode={} — using DLAA until low-res render pass is implemented", modeName(desiredMode));
+            }
+        }} catch (Throwable ignored) {}
 
         try {
             ensureTargets(w, h, color.format);
@@ -63,11 +84,11 @@ public final class DlssSuperResolution {
             int[] formats = { color.format, color.format, depth.format, VK_FORMAT_R16G16_SFLOAT };
 
             int r = NativeBridge.slDlssEvaluateNative(0, (int) DlssFrameState.frameCounter(), cmd.address(),
-                    NativeBridge.DLSS_DLAA, w, h, w, h, handles, layouts, formats, consts);
+                    mode, w, h, renderW, renderH, handles, layouts, formats, consts);
 
             if (r != 0) {
                 failed = true;
-                LOGGER.error("[DLSS-SR] evaluate failed ({}) — disabling in-frame DLSS.",
+                LOGGER.error("[DLSS-SR] evaluate failed ({}) - disabling in-frame DLSS.",
                         safeName(r));
                 return;
             }
@@ -85,11 +106,14 @@ public final class DlssSuperResolution {
                         color.getId(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, region);
             }
 
-            if (framesRun++ == 0) LOGGER.info("[DLSS-SR] DLAA running in-frame at {}x{}", w, h);
-            else if (framesRun % 600 == 0) LOGGER.info("[DLSS-SR] DLAA frames run: {}", framesRun);
+            if (framesRun++ == 0) {
+                LOGGER.info("[DLSS-SR] DLAA running at native {}x{} (AI anti-aliasing)", w, h);
+            } else if (framesRun % 600 == 0) {
+                LOGGER.info("[DLSS-SR] DLAA frames: {} ({}x{})", framesRun, w, h);
+            }
         } catch (Throwable t) {
             failed = true;
-            LOGGER.error("[DLSS-SR] in-frame DLSS failed — disabling: {}", t.toString());
+            LOGGER.error("[DLSS-SR] in-frame DLSS failed - disabling: {}", t.toString());
         }
     }
 
@@ -112,5 +136,9 @@ public final class DlssSuperResolution {
 
     private static String safeName(int r) {
         try { return NativeBridge.slResultNameNative(r); } catch (Throwable t) { return "code=" + r; }
+    }
+
+    private static String modeName(int m) {
+        return switch (m) { case 4->"UltraPerf"; case 1->"Perf"; case 2->"Balanced"; case 3->"Quality"; case 5->"UltraQuality"; default->"DLAA"; };
     }
 }

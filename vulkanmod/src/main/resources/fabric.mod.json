@@ -3,10 +3,13 @@
   "id": "vulkanmod",
   "version": "${version}",
 
-  "name": "VulkanMod",
-  "description": "Bring Vulkan to Minecraft!",
+  "name": "Kaiten",
+  "description": "Vulkan renderer for Minecraft with DLSS 4 Super Resolution + Frame Generation",
   "authors": [
     "Collateral"
+  ],
+  "contributors": [
+    "Kaiten DLSS 4 integration"
   ],
   "contact": {
     "homepage": "",
@@ -19,6 +22,9 @@
   "entrypoints": {
     "client": [
       "net.vulkanmod.Initializer"
+    ],
+    "modmenu": [
+      "net.kaiten.config.KaitenModMenu"
     ]
   },
   "mixins": [
@@ -29,6 +35,9 @@
   "depends": {
     "fabricloader": ">=0.14.14",
     "minecraft": "1.21.11"
+  },
+  "recommends": {
+    "modmenu": ">=9.0.0"
   },
   "custom": {
     "fabric-renderer-api-v1:contains_renderer": true

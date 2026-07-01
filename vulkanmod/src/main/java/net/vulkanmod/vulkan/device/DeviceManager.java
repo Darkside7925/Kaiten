@@ -188,7 +188,7 @@ public abstract class DeviceManager {
             // this GPU actually supports (so non-DLSS / older GPUs still create a device cleanly).
             java.util.Set<String> enabledExtensions = new java.util.HashSet<>(Vulkan.REQUIRED_EXTENSION);
             org.lwjgl.vulkan.VkPhysicalDeviceVulkan12Features dlssV12 = null;
-            java.util.List<String> dlssExts = net.vulkanmod.dlss.NativeBridge.dlssDeviceExtensions();
+            java.util.List<String> dlssExts = net.kaiten.NativeBridge.dlssDeviceExtensions();
             if (!dlssExts.isEmpty()) {
                 java.util.Set<String> supportedExts = new java.util.HashSet<>();
                 getAvailableExtension(stack, physicalDevice).forEach(e -> supportedExts.add(e.extensionNameString()));

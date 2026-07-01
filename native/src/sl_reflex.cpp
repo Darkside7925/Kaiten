@@ -1,4 +1,4 @@
-// sl_reflex.cpp — NVIDIA Reflex low-latency: options, sleep, PCL markers, state.
+﻿// sl_reflex.cpp â€” NVIDIA Reflex low-latency: options, sleep, PCL markers, state.
 // Reflex is the mandatory dependency for DLSS Frame Generation. Requires the device set.
 
 #define WIN32_LEAN_AND_MEAN
@@ -23,7 +23,7 @@ extern "C" {
 
 // int NativeBridge.slReflexSetOptionsNative(mode, frameLimitUs)
 JNIEXPORT jint JNICALL
-Java_net_vulkanmod_dlss_NativeBridge_slReflexSetOptionsNative(JNIEnv*, jclass, jint mode, jint frameLimitUs) {
+Java_net_kaiten_NativeBridge_slReflexSetOptionsNative(JNIEnv*, jclass, jint mode, jint frameLimitUs) {
     sl::ReflexOptions opt{};
     opt.mode = (sl::ReflexMode)mode;
     opt.frameLimitUs = (uint32_t)frameLimitUs;
@@ -31,9 +31,9 @@ Java_net_vulkanmod_dlss_NativeBridge_slReflexSetOptionsNative(JNIEnv*, jclass, j
     return (jint)slReflexSetOptions(opt);
 }
 
-// int NativeBridge.slReflexSleepNative(frameIndex) — the latency sleep point.
+// int NativeBridge.slReflexSleepNative(frameIndex) â€” the latency sleep point.
 JNIEXPORT jint JNICALL
-Java_net_vulkanmod_dlss_NativeBridge_slReflexSleepNative(JNIEnv*, jclass, jint frameIndex) {
+Java_net_kaiten_NativeBridge_slReflexSleepNative(JNIEnv*, jclass, jint frameIndex) {
     sl::FrameToken* t = tokenFor((uint32_t)frameIndex);
     if (!t) return (jint)sl::Result::eErrorInvalidParameter;
     return (jint)slReflexSleep(*t);
@@ -41,7 +41,7 @@ Java_net_vulkanmod_dlss_NativeBridge_slReflexSleepNative(JNIEnv*, jclass, jint f
 
 // int NativeBridge.slPclMarkerNative(marker, frameIndex)
 JNIEXPORT jint JNICALL
-Java_net_vulkanmod_dlss_NativeBridge_slPclMarkerNative(JNIEnv*, jclass, jint marker, jint frameIndex) {
+Java_net_kaiten_NativeBridge_slPclMarkerNative(JNIEnv*, jclass, jint marker, jint frameIndex) {
     sl::FrameToken* t = tokenFor((uint32_t)frameIndex);
     if (!t) return (jint)sl::Result::eErrorInvalidParameter;
     return (jint)slPCLSetMarker((sl::PCLMarker)marker, *t);
@@ -49,7 +49,7 @@ Java_net_vulkanmod_dlss_NativeBridge_slPclMarkerNative(JNIEnv*, jclass, jint mar
 
 // String NativeBridge.slReflexStateNative()
 JNIEXPORT jstring JNICALL
-Java_net_vulkanmod_dlss_NativeBridge_slReflexStateNative(JNIEnv* env, jclass) {
+Java_net_kaiten_NativeBridge_slReflexStateNative(JNIEnv* env, jclass) {
     sl::ReflexState state{};
     sl::Result r = slReflexGetState(state);
     char buf[160];

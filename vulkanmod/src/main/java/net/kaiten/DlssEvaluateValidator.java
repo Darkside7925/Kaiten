@@ -1,4 +1,4 @@
-package net.vulkanmod.dlss;
+package net.kaiten;
 
 import net.vulkanmod.vulkan.device.DeviceManager;
 import net.vulkanmod.vulkan.queue.CommandPool;
@@ -75,15 +75,15 @@ public final class DlssEvaluateValidator {
             vkWaitForFences(DeviceManager.vkDevice, fence, true, Long.MAX_VALUE);
 
             if (r == 0) {
-                LOGGER.info("[DLSS EvalTest] PASS — slEvaluateFeature(DLSS) ran: {}x{} -> {}x{} (Performance)",
+                LOGGER.info("[DLSS EvalTest] PASS â€” slEvaluateFeature(DLSS) ran: {}x{} -> {}x{} (Performance)",
                         renderW, renderH, outW, outH);
             } else {
                 String name;
                 try { name = NativeBridge.slResultNameNative(r); } catch (Throwable t) { name = "code=" + r; }
-                LOGGER.error("[DLSS EvalTest] FAIL — evaluate returned {} (see [mcdlss] stderr for the failing step)", name);
+                LOGGER.error("[DLSS EvalTest] FAIL â€” evaluate returned {} (see [mcdlss] stderr for the failing step)", name);
             }
         } catch (Throwable t) {
-            LOGGER.error("[DLSS EvalTest] FAIL — {}", t.toString());
+            LOGGER.error("[DLSS EvalTest] FAIL â€” {}", t.toString());
         } finally {
             free(colorIn); free(colorOut); free(depth); free(mv);
         }

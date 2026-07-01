@@ -1,4 +1,4 @@
-package net.vulkanmod.dlss;
+package net.kaiten;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -7,13 +7,13 @@ import org.joml.Vector2f;
 import org.joml.Vector4f;
 
 /**
- * Deterministic, headless validation of {@link DlssFrameState} — the temporal basis the
+ * Deterministic, headless validation of {@link DlssFrameState} â€” the temporal basis the
  * motion-vector pass and DLSS-SR jitter depend on. Runs synthetic camera matrices through
  * the exact production methods and asserts:
  *   1. Halton(2,3) jitter produces the expected sub-pixel offsets.
- *   2. Static camera → frame-to-frame view-projection delta is ~0 (no motion vectors).
- *   3. Rotating camera → view-projection delta is clearly non-zero (motion present).
- *   4. The current→previous roll actually advances each frame.
+ *   2. Static camera â†’ frame-to-frame view-projection delta is ~0 (no motion vectors).
+ *   3. Rotating camera â†’ view-projection delta is clearly non-zero (motion present).
+ *   4. The currentâ†’previous roll actually advances each frame.
  *
  * Gated by {@code -Dmcdlss.selftest=true}; logs PASS/FAIL per check.
  */
@@ -58,13 +58,13 @@ public final class DlssSelfTest {
 
         DlssFrameState.beginFrame(1920, 1080);
         DlssFrameState.setViewProjection(v, p);
-        check("Halton f1 X ≈ -0.2500", approx(DlssFrameState.jitterPixelsX(), -0.25f, 1e-4f));
-        check("Halton f1 Y ≈ +0.1667", approx(DlssFrameState.jitterPixelsY(),  0.16667f, 1e-4f));
+        check("Halton f1 X â‰ˆ -0.2500", approx(DlssFrameState.jitterPixelsX(), -0.25f, 1e-4f));
+        check("Halton f1 Y â‰ˆ +0.1667", approx(DlssFrameState.jitterPixelsY(),  0.16667f, 1e-4f));
 
         DlssFrameState.beginFrame(1920, 1080);
         DlssFrameState.setViewProjection(v, p);
-        check("Halton f2 X ≈ +0.2500", approx(DlssFrameState.jitterPixelsX(),  0.25f, 1e-4f));
-        check("Halton f2 Y ≈ -0.3889", approx(DlssFrameState.jitterPixelsY(), -0.38889f, 1e-4f));
+        check("Halton f2 X â‰ˆ +0.2500", approx(DlssFrameState.jitterPixelsX(),  0.25f, 1e-4f));
+        check("Halton f2 Y â‰ˆ -0.3889", approx(DlssFrameState.jitterPixelsY(), -0.38889f, 1e-4f));
 
         boolean inRange = true;
         for (int i = 0; i < 64; i++) {
@@ -86,7 +86,7 @@ public final class DlssSelfTest {
 
         check("Static: hasPrevious becomes true", DlssFrameState.hasPreviousFrame());
         float d = DlssFrameState.lastViewProjectionDelta();
-        check("Static: view-projection delta ≈ 0 (was " + d + ")", d < 1e-3f);
+        check("Static: view-projection delta â‰ˆ 0 (was " + d + ")", d < 1e-3f);
     }
 
     private static void testRotatingCameraHasMotion() {
@@ -96,7 +96,7 @@ public final class DlssSelfTest {
         DlssFrameState.beginFrame(1920, 1080);
         DlssFrameState.setViewProjection(view(0f), p);   // frame 1
         DlssFrameState.beginFrame(1920, 1080);
-        DlssFrameState.setViewProjection(view(5f), p);   // frame 2: yaw +5°
+        DlssFrameState.setViewProjection(view(5f), p);   // frame 2: yaw +5Â°
 
         float d = DlssFrameState.lastViewProjectionDelta();
         check("Rotating: view-projection delta > 0.1 (was " + d + ")", d > 0.1f);
@@ -111,7 +111,7 @@ public final class DlssSelfTest {
         DlssFrameState.setViewProjection(v0, p);
         Matrix4f vpFrame1 = new Matrix4f(DlssFrameState.currentViewProjection());
 
-        DlssFrameState.beginFrame(1920, 1080);          // rolls current(f1) → previous
+        DlssFrameState.beginFrame(1920, 1080);          // rolls current(f1) â†’ previous
         DlssFrameState.setViewProjection(v1, p);
 
         check("Roll: previous == last frame's current",
@@ -123,7 +123,7 @@ public final class DlssSelfTest {
     private static void testMotionVectorMath() {
         Matrix4f p = proj();
         Matrix4f curVP  = new Matrix4f(p).mul(view(0f));
-        Matrix4f prevVP = new Matrix4f(p).mul(view(5f));   // camera rotated +5° last→this frame
+        Matrix4f prevVP = new Matrix4f(p).mul(view(5f));   // camera rotated +5Â° lastâ†’this frame
         Matrix4f invCur = new Matrix4f(curVP).invert();
 
         // Sample pixels across the screen at varied depths.
@@ -132,7 +132,7 @@ public final class DlssSelfTest {
                 {0.80f, 0.20f, 0.70f}, {0.10f, 0.40f, 0.90f}
         };
 
-        // 1) Round-trip: reconstruct world from (uv,depth) then re-project with curVP → recover (uv,depth).
+        // 1) Round-trip: reconstruct world from (uv,depth) then re-project with curVP â†’ recover (uv,depth).
         boolean roundTripOk = true;
         float maxErr = 0f;
         float[] out = new float[3];
@@ -143,11 +143,11 @@ public final class DlssSelfTest {
             maxErr = Math.max(maxErr, e);
             if (e > 1e-3f) roundTripOk = false;
         }
-        check("MV: reconstruct↔project round-trip (max err " + String.format("%.2e", maxErr) + ")", roundTripOk);
+        check("MV: reconstructâ†”project round-trip (max err " + String.format("%.2e", maxErr) + ")", roundTripOk);
 
-        // 2) Static camera invariant: prevVP == curVP → motion vector is ~0 for every pixel.
+        // 2) Static camera invariant: prevVP == curVP â†’ motion vector is ~0 for every pixel.
         // Tolerance reflects float32 inverse-VP round-trip precision (~1e-4 UV = sub-pixel),
-        // the same source bounded by the round-trip test above — not a tunable fudge factor.
+        // the same source bounded by the round-trip test above â€” not a tunable fudge factor.
         final float STATIC_EPS = 1e-3f;
         boolean staticZero = true;
         float maxStatic = 0f;
@@ -157,10 +157,10 @@ public final class DlssSelfTest {
             maxStatic = Math.max(maxStatic, mv.length());
             if (mv.length() > STATIC_EPS) staticZero = false;
         }
-        check("MV: static camera → motion ≈ 0 within float precision (max "
+        check("MV: static camera â†’ motion â‰ˆ 0 within float precision (max "
                 + String.format("%.2e", maxStatic) + " UV)", staticZero);
 
-        // 3) Consistency: computed MV equals analytic (prevUV − curUV) from the same world point.
+        // 3) Consistency: computed MV equals analytic (prevUV âˆ’ curUV) from the same world point.
         boolean consistent = true;
         boolean anyMotion = false;
         for (float[] s : samples) {

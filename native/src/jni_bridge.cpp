@@ -1,4 +1,4 @@
-// jni_bridge.cpp — JNI entrypoints for net.vulkanmod.dlss.NativeBridge.
+﻿// jni_bridge.cpp â€” JNI entrypoints for net.kaiten.NativeBridge.
 //
 // Phase 0: prove the native library loads inside Minecraft and a JNI round-trip works,
 // with NO Streamline dependency yet. Streamline lifecycle (slInit, feature checks, tagging,
@@ -10,19 +10,19 @@
 
 extern "C" {
 
-// jstring net.vulkanmod.dlss.NativeBridge.hello(String from)
+// jstring net.kaiten.NativeBridge.hello(String from)
 JNIEXPORT jstring JNICALL
-Java_net_vulkanmod_dlss_NativeBridge_hello(JNIEnv* env, jclass /*clazz*/, jstring from) {
+Java_net_kaiten_NativeBridge_hello(JNIEnv* env, jclass /*clazz*/, jstring from) {
     const char* fromC = from ? env->GetStringUTFChars(from, nullptr) : "";
-    std::string msg = std::string(MCDLSS_VERSION_STRING) + " — JNI round-trip OK, hello from '" +
+    std::string msg = std::string(MCDLSS_VERSION_STRING) + " â€” JNI round-trip OK, hello from '" +
                       (fromC ? fromC : "") + "'";
     if (from) env->ReleaseStringUTFChars(from, fromC);
     return env->NewStringUTF(msg.c_str());
 }
 
-// int net.vulkanmod.dlss.NativeBridge.abiVersion()
+// int net.kaiten.NativeBridge.abiVersion()
 JNIEXPORT jint JNICALL
-Java_net_vulkanmod_dlss_NativeBridge_abiVersion(JNIEnv* /*env*/, jclass /*clazz*/) {
+Java_net_kaiten_NativeBridge_abiVersion(JNIEnv* /*env*/, jclass /*clazz*/) {
     return (jint)MCDLSS_ABI_VERSION;
 }
 

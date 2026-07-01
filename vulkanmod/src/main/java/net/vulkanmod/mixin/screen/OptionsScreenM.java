@@ -25,6 +25,6 @@ public class OptionsScreenM extends Screen {
 
     @Inject(method = "method_19828", at = @At("HEAD"), cancellable = true)
     private void injectVideoOptionScreen(CallbackInfoReturnable<Screen> cir) {
-        cir.setReturnValue(new VOptionScreen(Component.literal("Video Setting"), this));
+        cir.setReturnValue(new VOptionScreen(Component.literal("Kaiten — Video Settings"), this));
     }
 }

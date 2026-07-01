@@ -153,23 +153,34 @@ public class Vulkan {
 
         setupDepthFormat();
 
-        // Phase 1: device exists — report which DLSS features this adapter supports.
+        // Phase 1: device exists â€” report which DLSS features this adapter supports.
         try {
-            net.vulkanmod.dlss.NativeBridge.reportFeatures(DeviceManager.physicalDevice.address());
+            net.kaiten.NativeBridge.reportFeatures(DeviceManager.physicalDevice.address());
         } catch (Throwable t) {
-            net.vulkanmod.dlss.NativeBridge.LOGGER.warn("DLSS feature report failed: {}", t.toString());
+            net.kaiten.NativeBridge.LOGGER.warn("DLSS feature report failed: {}", t.toString());
         }
 
         // Phase 3: hand SL the Vulkan device + log DLSS optimal render resolutions.
         try {
             Queue.QueueFamilyIndices q = Queue.getQueueFamilies();
-            net.vulkanmod.dlss.NativeBridge.setupDlssDevice(
+            net.kaiten.NativeBridge.setupDlssDevice(
                     instance.address(),
                     DeviceManager.physicalDevice.address(),
                     DeviceManager.vkDevice.address(),
                     q.graphicsFamily, 0, q.computeFamily, 0);
         } catch (Throwable t) {
-            net.vulkanmod.dlss.NativeBridge.LOGGER.warn("DLSS device setup failed: {}", t.toString());
+            net.kaiten.NativeBridge.LOGGER.warn("DLSS device setup failed: {}", t.toString());
+        }
+
+        // Phase 6: initialize Kaiten config — auto-selects per-GPU profile, applies settings.
+        try {
+            String gpuName = DeviceManager.device != null
+                    ? DeviceManager.device.deviceName : "Unknown GPU";
+            net.kaiten.config.KaitenConfig.INSTANCE.onDeviceReady(gpuName);
+            // Register Kaiten as a tab in VulkanMod's Video Settings sidebar.
+            net.kaiten.config.KaitenOptions.register();
+        } catch (Throwable t) {
+            net.kaiten.NativeBridge.LOGGER.warn("Kaiten config init failed: {}", t.toString());
         }
 
     }
@@ -191,9 +202,9 @@ public class Vulkan {
 
         // Phase 1: shut Streamline down before tearing down the Vulkan device.
         try {
-            net.vulkanmod.dlss.NativeBridge.shutdownStreamline();
+            net.kaiten.NativeBridge.shutdownStreamline();
         } catch (Throwable t) {
-            net.vulkanmod.dlss.NativeBridge.LOGGER.warn("Streamline shutdown failed: {}", t.toString());
+            net.kaiten.NativeBridge.LOGGER.warn("Streamline shutdown failed: {}", t.toString());
         }
 
         vkDestroyCommandPool(DeviceManager.vkDevice, commandPool, null);

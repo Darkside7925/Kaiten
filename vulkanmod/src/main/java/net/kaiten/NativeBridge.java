@@ -1,4 +1,4 @@
-package net.vulkanmod.dlss;
+package net.kaiten;
 
 import net.fabricmc.loader.api.FabricLoader;
 import org.apache.logging.log4j.LogManager;
@@ -9,7 +9,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 /**
- * JNI bridge to {@code mcdlss_native.dll} — the C++ glue that owns the NVIDIA Streamline
+ * JNI bridge to {@code mcdlss_native.dll} â€” the C++ glue that owns the NVIDIA Streamline
  * lifecycle (slInit / feature checks / tagging / evaluate) on top of VulkanMod's Vulkan device.
  *
  * <p>Phase 0 scope: prove the native library loads inside Minecraft and a JNI round-trip works
@@ -23,11 +23,11 @@ public final class NativeBridge {
     public static final Logger LOGGER = LogManager.getLogger("VulkanMod-DLSS");
 
     /** Must match MCDLSS_ABI_VERSION in native/include/mcdlss.h. Bumped on any JNI signature change. */
-    public static final int EXPECTED_ABI_VERSION = 2;
+    public static final int EXPECTED_ABI_VERSION = 3;
 
     private static final String LIB_NAME = "mcdlss_native";
 
-    // Streamline feature ids — must match sl_core_types.h.
+    // Streamline feature ids â€” must match sl_core_types.h.
     public static final int FEATURE_DLSS   = 0;     // Super Resolution
     public static final int FEATURE_REFLEX = 3;
     public static final int FEATURE_PCL    = 4;     // PC Latency
@@ -53,7 +53,7 @@ public final class NativeBridge {
     /** Returns the native library's ABI version, validated against {@link #EXPECTED_ABI_VERSION}. */
     public static native int abiVersion();
 
-    // --- Phase 1 native methods (Streamline) — only present when the DLL is built with Streamline ---
+    // --- Phase 1 native methods (Streamline) â€” only present when the DLL is built with Streamline ---
 
     /** slInit against Vulkan. pluginDir = folder holding sl.*.dll. Returns sl::Result (0 = eOk). */
     public static native int slInitNative(String pluginDir, int logLevel);
@@ -72,7 +72,7 @@ public final class NativeBridge {
 
     // --- Phase 3 (DLSS-SR) native methods ---
 
-    /** slSetVulkanInfo — hand SL the Vulkan device (manual hooking). Returns sl::Result (0 = eOk). */
+    /** slSetVulkanInfo â€” hand SL the Vulkan device (manual hooking). Returns sl::Result (0 = eOk). */
     public static native int slSetVulkanInfoNative(long instance, long physicalDevice, long device,
                                                    int gfxFamily, int gfxIndex, int cmpFamily, int cmpIndex);
 
@@ -127,6 +127,31 @@ public final class NativeBridge {
     public static native int slPclMarkerNative(int marker, int frameIndex);
     public static native String slReflexStateNative();
 
+    // --- Phase 5 (DLSS-G / Frame Generation) native methods ---
+
+    /** slDLSSGSetOptions: configure FG mode, multiplier, formats. Returns sl::Result (0 = eOk). */
+    public static native int slDlssGSetOptionsNative(int mode, int numFramesToGenerate, int flags,
+            int width, int height, int colorFormat, int mvFormat, int depthFormat);
+
+    /** slDLSSGGetState: returns a formatted string with FG state (status, max multiplier, VRAM, etc.). */
+    public static native String slDlssGGetStateNative();
+
+    /**
+     * Tags HUD-less color + depth + MV + UI alpha, then slEvaluateFeature(DLSS-G).
+     * handles: [hudLessImg, hudLessView, depthImg, depthView, mvImg, mvView, uiColorImg, uiColorView]
+     * layouts/formats order: hudLess, depth, mv, uiColor
+     * consts: same 40-float layout as SR
+     */
+    public static native int slDlssGEvaluateNative(int frameIndex, long cmdBuffer, int width, int height,
+            long[] handles, int[] layouts, int[] formats, float[] consts);
+
+    // sl::DLSSGMode values.
+    public static final int DLSSG_OFF = 0, DLSSG_ON = 1, DLSSG_AUTO = 2, DLSSG_DYNAMIC = 3;
+    // DLSSGFlags
+    public static final int DLSSG_FLAG_SHOW_ONLY_INTERPOLATED = 1 << 0;
+    public static final int DLSSG_FLAG_DYNAMIC_RES = 1 << 1;
+    public static final int DLSSG_FLAG_RETAIN_RESOURCES = 1 << 3;
+
     // sl::ReflexMode + sl::PCLMarker values.
     public static final int REFLEX_OFF = 0, REFLEX_LOW_LATENCY = 1, REFLEX_LOW_LATENCY_BOOST = 2;
     public static final int PCL_SIM_START = 0, PCL_SIM_END = 1, PCL_RENDER_SUBMIT_START = 2,
@@ -150,7 +175,52 @@ public final class NativeBridge {
         }
     }
 
-    /** Reflex sleep + simulation-start marker — call at the very start of a frame. Best-effort. */
+    // --- Phase 5: Frame Generation state ---
+
+    public static boolean frameGenConfigured = false;
+    public static boolean frameGenActive = false;
+    public static int frameGenMaxMultiplier = 0;      // max numFramesToGenerate supported (1=2x, 3=4x)
+    public static int frameGenCurrentMultiplier = 0;   // currently configured multiplier
+
+    /**
+     * Initialize DLSS Frame Generation. Must be called after the device is set + Reflex is enabled.
+     * Queries the GPU's maximum FG multiplier and logs it.
+     */
+    public static synchronized void setupFrameGeneration(int width, int height,
+            int colorFormat, int mvFormat, int depthFormat) {
+        if (!vulkanInfoSet || !frameGenSupported) return;
+        try {
+            // Query state first to discover max multiplier.
+            String stateStr = slDlssGGetStateNative();
+            LOGGER.info("DLSS-G initial state: {}", stateStr);
+
+            // Parse maxFramesToGen from the state string.
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("maxFramesToGen=(\\d+)")
+                    .matcher(stateStr);
+            if (m.find()) {
+                frameGenMaxMultiplier = Integer.parseInt(m.group(1));
+                LOGGER.info("DLSS-G max multiplier: {}x ({} frames to generate)",
+                        frameGenMaxMultiplier + 1, frameGenMaxMultiplier);
+            }
+
+            // Start with 2x (numFramesToGenerate=1) as the safe default.
+            frameGenCurrentMultiplier = Math.min(1, frameGenMaxMultiplier);  // default 2x
+            int flags = DLSSG_FLAG_RETAIN_RESOURCES;
+            int r = slDlssGSetOptionsNative(DLSSG_ON, frameGenCurrentMultiplier, flags,
+                    width, height, colorFormat, mvFormat, depthFormat);
+            if (r == 0) {
+                frameGenConfigured = true;
+                LOGGER.info("DLSS-G configured: {}x, {}x{}",
+                        frameGenCurrentMultiplier + 1, width, height);
+            } else {
+                LOGGER.warn("DLSS-G setOptions failed: {}", resultName(r));
+            }
+        } catch (Throwable t) {
+            LOGGER.warn("DLSS-G setup error: {}", t.toString());
+        }
+    }
+
+    /** Reflex sleep + simulation-start marker â€” call at the very start of a frame. Best-effort. */
     public static void reflexFrameStart(int frameIndex) {
         if (!reflexEnabled) return;
         try {
@@ -194,7 +264,7 @@ public final class NativeBridge {
             }
         } catch (Throwable t) {
             loadError = t.toString();
-            LOGGER.warn("DLSS native library not loaded — continuing as plain VulkanMod. Reason: {}", loadError);
+            LOGGER.warn("DLSS native library not loaded â€” continuing as plain VulkanMod. Reason: {}", loadError);
             return false;
         }
 
@@ -203,14 +273,14 @@ public final class NativeBridge {
             int abi = abiVersion();
             if (abi != EXPECTED_ABI_VERSION) {
                 loadError = "ABI mismatch: native=" + abi + " expected=" + EXPECTED_ABI_VERSION;
-                LOGGER.error("DLSS native {} — disabling DLSS.", loadError);
+                LOGGER.error("DLSS native {} â€” disabling DLSS.", loadError);
                 return false;
             }
             loaded = true;
             return true;
         } catch (Throwable t) {
             loadError = "ABI check failed: " + t;
-            LOGGER.error("DLSS native {} — disabling DLSS.", loadError);
+            LOGGER.error("DLSS native {} â€” disabling DLSS.", loadError);
             return false;
         }
     }
@@ -259,7 +329,7 @@ public final class NativeBridge {
         }
     }
 
-    // --- Phase 1: Streamline lifecycle (all best-effort; failure → plain VulkanMod) ---
+    // --- Phase 1: Streamline lifecycle (all best-effort; failure â†’ plain VulkanMod) ---
 
     /** Initializes Streamline (slInit). Call early, before the Vulkan device is created. */
     public static synchronized void initStreamline() {
@@ -276,12 +346,12 @@ public final class NativeBridge {
                     LOGGER.info("DLSS requires VK 1.2/1.3 features: {}", slDlssFeaturesNative().replace("\n", ", "));
                 } catch (Throwable ignored) {}
             } else {
-                LOGGER.warn("Streamline init failed: {} — DLSS disabled.", resultName(r));
+                LOGGER.warn("Streamline init failed: {} â€” DLSS disabled.", resultName(r));
             }
         } catch (UnsatisfiedLinkError e) {
-            LOGGER.warn("Native library built without Streamline — DLSS disabled.");
+            LOGGER.warn("Native library built without Streamline â€” DLSS disabled.");
         } catch (Throwable t) {
-            LOGGER.warn("Streamline init error: {} — DLSS disabled.", t.toString());
+            LOGGER.warn("Streamline init error: {} â€” DLSS disabled.", t.toString());
         }
     }
 
@@ -296,7 +366,7 @@ public final class NativeBridge {
             reflexSupported   = checkFeature("Reflex",                FEATURE_REFLEX, vkPhysicalDevice);
             frameGenSupported = checkFeature("DLSS Frame Generation", FEATURE_DLSS_G, vkPhysicalDevice);
             checkFeature("PC Latency (PCL)", FEATURE_PCL, vkPhysicalDevice);
-            LOGGER.info("DLSS feature report — Super Resolution: {}, Frame Generation: {}, Reflex: {}",
+            LOGGER.info("DLSS feature report â€” Super Resolution: {}, Frame Generation: {}, Reflex: {}",
                     yesNo(dlssSupported), yesNo(frameGenSupported), yesNo(reflexSupported));
         } catch (Throwable t) {
             LOGGER.warn("DLSS feature query failed: {}", t.toString());
@@ -313,7 +383,7 @@ public final class NativeBridge {
         try {
             int r = slSetVulkanInfoNative(instance, physicalDevice, device, gfxFamily, gfxIndex, cmpFamily, cmpIndex);
             if (r != 0) {
-                LOGGER.warn("slSetVulkanInfo failed: {} — DLSS evaluate unavailable.", resultName(r));
+                LOGGER.warn("slSetVulkanInfo failed: {} â€” DLSS evaluate unavailable.", resultName(r));
                 return;
             }
             vulkanInfoSet = true;
@@ -325,6 +395,17 @@ public final class NativeBridge {
 
         // Phase 4: enable Reflex low-latency (mandatory dependency for Frame Generation).
         setupReflex(REFLEX_LOW_LATENCY);
+
+        // Phase 5: initialize Frame Generation if supported.
+        if (frameGenSupported) {
+            com.mojang.blaze3d.platform.Window w = net.minecraft.client.Minecraft.getInstance().getWindow();
+            // FG uses RGBA8 for color, RG16F for MV, D32_SFLOAT for depth.
+            // These formats are queried during setup; use the Vulkan format constants.
+            setupFrameGeneration(w.getWidth(), w.getHeight(),
+                    /* VK_FORMAT_R8G8B8A8_UNORM */ 37,
+                    /* VK_FORMAT_R16G16_SFLOAT */ 83,
+                    /* VK_FORMAT_D32_SFLOAT */ 126);
+        }
 
         if (!dlssSupported) return;
         try {

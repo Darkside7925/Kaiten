@@ -1,7 +1,7 @@
-// sl_dlss_sr.cpp — DLSS Super Resolution: Vulkan device hand-off + optimal-settings query.
+﻿// sl_dlss_sr.cpp â€” DLSS Super Resolution: Vulkan device hand-off + optimal-settings query.
 //
 // To call the DLSS feature functions (slDLSS*), Streamline needs the Vulkan device set via
-// slSetVulkanInfo (manual-hooking mode — we do NOT use SL's vkCreateDevice proxies because
+// slSetVulkanInfo (manual-hooking mode â€” we do NOT use SL's vkCreateDevice proxies because
 // LWJGL loads the real Vulkan loader). We avoid pulling in vulkan.h by declaring a
 // layout-compatible sl::VulkanInfo with void* handles (VkDevice/VkInstance/VkPhysicalDevice
 // are opaque pointers) and the unmangled extern "C" slSetVulkanInfo symbol.
@@ -15,8 +15,13 @@
 
 #include "mcdlss.h"
 #include "sl.h"
+#include "sl_core_api.h"
 #include "sl_dlss.h"
 #include "sl_matrix_helpers.h"
+
+// Shared frame token (used by both SR and FG to avoid duplicate slGetNewFrameToken)
+sl::FrameToken* g_sharedToken = nullptr;
+uint32_t g_sharedTokenFrame = 0xFFFFFFFF;
 
 namespace sl {
 // Layout-compatible replica of sl_helpers_vk.h's VulkanInfo (handles are pointers).
@@ -48,25 +53,25 @@ static std::string joinList(const char** arr, uint32_t n) {
 
 extern "C" {
 
-// String NativeBridge.slDlssDeviceExtensionsNative() — newline-joined VK device extensions DLSS needs.
+// String NativeBridge.slDlssDeviceExtensionsNative() â€” newline-joined VK device extensions DLSS needs.
 JNIEXPORT jstring JNICALL
-Java_net_vulkanmod_dlss_NativeBridge_slDlssDeviceExtensionsNative(JNIEnv* env, jclass) {
+Java_net_kaiten_NativeBridge_slDlssDeviceExtensionsNative(JNIEnv* env, jclass) {
     sl::FeatureRequirements req{};
     if (slGetFeatureRequirements(sl::kFeatureDLSS, req) != sl::Result::eOk) return env->NewStringUTF("");
     return env->NewStringUTF(joinList(req.vkDeviceExtensions, req.vkNumDeviceExtensions).c_str());
 }
 
-// String NativeBridge.slDlssInstanceExtensionsNative() — newline-joined VK instance extensions DLSS needs.
+// String NativeBridge.slDlssInstanceExtensionsNative() â€” newline-joined VK instance extensions DLSS needs.
 JNIEXPORT jstring JNICALL
-Java_net_vulkanmod_dlss_NativeBridge_slDlssInstanceExtensionsNative(JNIEnv* env, jclass) {
+Java_net_kaiten_NativeBridge_slDlssInstanceExtensionsNative(JNIEnv* env, jclass) {
     sl::FeatureRequirements req{};
     if (slGetFeatureRequirements(sl::kFeatureDLSS, req) != sl::Result::eOk) return env->NewStringUTF("");
     return env->NewStringUTF(joinList(req.vkInstanceExtensions, req.vkNumInstanceExtensions).c_str());
 }
 
-// String NativeBridge.slDlssFeaturesNative() — newline-joined required VK 1.2/1.3 feature names (diagnostic).
+// String NativeBridge.slDlssFeaturesNative() â€” newline-joined required VK 1.2/1.3 feature names (diagnostic).
 JNIEXPORT jstring JNICALL
-Java_net_vulkanmod_dlss_NativeBridge_slDlssFeaturesNative(JNIEnv* env, jclass) {
+Java_net_kaiten_NativeBridge_slDlssFeaturesNative(JNIEnv* env, jclass) {
     sl::FeatureRequirements req{};
     if (slGetFeatureRequirements(sl::kFeatureDLSS, req) != sl::Result::eOk) return env->NewStringUTF("");
     std::string s = joinList(req.vkFeatures12, req.vkNumFeatures12);
@@ -77,7 +82,7 @@ Java_net_vulkanmod_dlss_NativeBridge_slDlssFeaturesNative(JNIEnv* env, jclass) {
 
 // int NativeBridge.slSetVulkanInfoNative(instance, physicalDevice, device, gfxFamily, gfxIndex, cmpFamily, cmpIndex)
 JNIEXPORT jint JNICALL
-Java_net_vulkanmod_dlss_NativeBridge_slSetVulkanInfoNative(JNIEnv*, jclass,
+Java_net_kaiten_NativeBridge_slSetVulkanInfoNative(JNIEnv*, jclass,
         jlong instance, jlong physicalDevice, jlong device,
         jint gfxFamily, jint gfxIndex, jint cmpFamily, jint cmpIndex) {
     sl::VulkanInfo info{};
@@ -94,7 +99,7 @@ Java_net_vulkanmod_dlss_NativeBridge_slSetVulkanInfoNative(JNIEnv*, jclass,
 
 // String NativeBridge.slDlssOptimalSettingsNative(outputWidth, outputHeight, mode)
 JNIEXPORT jstring JNICALL
-Java_net_vulkanmod_dlss_NativeBridge_slDlssOptimalSettingsNative(JNIEnv* env, jclass,
+Java_net_kaiten_NativeBridge_slDlssOptimalSettingsNative(JNIEnv* env, jclass,
         jint outputWidth, jint outputHeight, jint mode) {
     sl::DLSSOptions options{};
     options.mode = (sl::DLSSMode)mode;
@@ -145,7 +150,7 @@ extern "C" {
  * consts: [0..15]=cameraViewToClip(row-major) [16..31]=clipToPrevClip jx jy mvsx mvsy near far fov aspect
  */
 JNIEXPORT jint JNICALL
-Java_net_vulkanmod_dlss_NativeBridge_slDlssEvaluateNative(JNIEnv* env, jclass,
+Java_net_kaiten_NativeBridge_slDlssEvaluateNative(JNIEnv* env, jclass,
         jint viewport, jint frameIndex, jlong cmdBuffer, jint mode,
         jint outW, jint outH, jint renderW, jint renderH,
         jlongArray jHandles, jintArray jLayouts, jintArray jFormats, jfloatArray jConsts) {
@@ -165,8 +170,11 @@ Java_net_vulkanmod_dlss_NativeBridge_slDlssEvaluateNative(JNIEnv* env, jclass,
 
     uint32_t fi = (uint32_t)frameIndex;
     sl::FrameToken* token = nullptr;
-    r = slGetNewFrameToken(token, &fi);
-    if (r != sl::Result::eOk) { std::fprintf(stderr, "[mcdlss] slGetNewFrameToken=%d\n", (int)r); return (jint)r; }
+    sl::Result tokenR = slGetNewFrameToken(token, &fi);
+    if (tokenR != sl::Result::eOk) { std::fprintf(stderr, "[mcdlss/SR] slGetNewFrameToken=%d\n", (int)tokenR); return (jint)tokenR; }
+    // Store for FG to reuse (avoids double-NewFrameToken error).
+    g_sharedToken = token;
+    g_sharedTokenFrame = fi;
 
     sl::Constants consts{};
     setRowMajor(consts.cameraViewToClip, &c[0]);
@@ -189,24 +197,26 @@ Java_net_vulkanmod_dlss_NativeBridge_slDlssEvaluateNative(JNIEnv* env, jclass,
     r = slSetConstants(consts, *token, vp);
     if (r != sl::Result::eOk) { std::fprintf(stderr, "[mcdlss] slSetConstants=%d\n", (int)r); return (jint)r; }
 
-    sl::Resource colorIn  = vkResource(h[0], h[1], lay[0], renderW, renderH, fmt[0]);
+    // All buffers are at the OUTPUT (window) resolution since we do post-process
+    // DLAA-style (no separate low-res render pass yet). Use outW/outH for all
+    // resource dimensions so NGX matches the actual buffer contents.
+    sl::Resource colorIn  = vkResource(h[0], h[1], lay[0], outW, outH, fmt[0]);
     sl::Resource colorOut = vkResource(h[2], h[3], lay[1], outW, outH, fmt[1]);
-    sl::Resource depth    = vkResource(h[4], h[5], lay[2], renderW, renderH, fmt[2]);
-    sl::Resource mvec     = vkResource(h[6], h[7], lay[3], renderW, renderH, fmt[3]);
-    sl::Extent renderExt{0, 0, (uint32_t)renderW, (uint32_t)renderH};
-    sl::Extent outExt{0, 0, (uint32_t)outW, (uint32_t)outH};
+    sl::Resource depth    = vkResource(h[4], h[5], lay[2], outW, outH, fmt[2]);
+    sl::Resource mvec     = vkResource(h[6], h[7], lay[3], outW, outH, fmt[3]);
+    sl::Extent fullExt{0, 0, (uint32_t)outW, (uint32_t)outH};
     sl::ResourceTag tags[] = {
-        sl::ResourceTag(&colorIn,  sl::kBufferTypeScalingInputColor,  sl::ResourceLifecycle::eOnlyValidNow, &renderExt),
-        sl::ResourceTag(&colorOut, sl::kBufferTypeScalingOutputColor, sl::ResourceLifecycle::eOnlyValidNow, &outExt),
-        sl::ResourceTag(&depth,    sl::kBufferTypeDepth,              sl::ResourceLifecycle::eValidUntilPresent, &renderExt),
-        sl::ResourceTag(&mvec,     sl::kBufferTypeMotionVectors,      sl::ResourceLifecycle::eOnlyValidNow, &renderExt),
+        sl::ResourceTag(&colorIn,  sl::kBufferTypeScalingInputColor,  sl::ResourceLifecycle::eOnlyValidNow, &fullExt),
+        sl::ResourceTag(&colorOut, sl::kBufferTypeScalingOutputColor, sl::ResourceLifecycle::eOnlyValidNow, &fullExt),
+        sl::ResourceTag(&depth,    sl::kBufferTypeDepth,              sl::ResourceLifecycle::eValidUntilPresent, &fullExt),
+        sl::ResourceTag(&mvec,     sl::kBufferTypeMotionVectors,      sl::ResourceLifecycle::eOnlyValidNow, &fullExt),
     };
     r = slSetTag(vp, tags, 4, cmd);
     if (r != sl::Result::eOk) { std::fprintf(stderr, "[mcdlss] slSetTag=%d\n", (int)r); return (jint)r; }
 
     const sl::BaseStructure* inputs[] = { &vp };
     r = slEvaluateFeature(sl::kFeatureDLSS, *token, inputs, 1, cmd);
-    if (r != sl::Result::eOk) std::fprintf(stderr, "[mcdlss] slEvaluateFeature=%d\n", (int)r);
+    if (r != sl::Result::eOk) std::fprintf(stderr, "[mcdlss/SR] slEvaluateFeature=%d mode=%d out=%ux%u\n", (int)r, (int)mode, outW, outH);
     return (jint)r;
 }
 

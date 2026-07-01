@@ -6,7 +6,7 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.vulkanmod.config.Config;
 import net.vulkanmod.config.Platform;
 import net.vulkanmod.config.UpdateChecker;
-import net.vulkanmod.dlss.NativeBridge;
+import net.kaiten.NativeBridge;
 import net.vulkanmod.render.chunk.build.frapi.VulkanModRenderer;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -30,7 +30,7 @@ public class Initializer implements ClientModInitializer {
 		LOGGER.info("== VulkanMod ==");
 
 		// DLSS native bridge bootstrap (Phase 0: prove JNI round-trip before any Streamline code).
-		// Failure here is non-fatal — the game continues as plain VulkanMod.
+		// Failure here is non-fatal â€” the game continues as plain VulkanMod.
 		if (NativeBridge.load()) {
 			NativeBridge.LOGGER.info(NativeBridge.hello("VulkanMod " + VERSION));
 			NativeBridge.LOGGER.info("Native ABI version: {} (expected {})",
@@ -39,9 +39,12 @@ public class Initializer implements ClientModInitializer {
 			NativeBridge.initStreamline();
 		}
 
+		// Phase 6: register DLSS chat commands (/dlss on|off, /dlss fg on|off|2x|3x|4x, /dlss status).
+		net.kaiten.DlssCommands.register();
+
 		// Phase 2: optional headless validation of the temporal-state math.
 		if (Boolean.getBoolean("mcdlss.selftest")) {
-			net.vulkanmod.dlss.DlssSelfTest.run();
+			net.kaiten.DlssSelfTest.run();
 		}
 
 		var configPath = FabricLoader.getInstance()
@@ -49,6 +52,10 @@ public class Initializer implements ClientModInitializer {
 				.resolve("vulkanmod_settings.json");
 
 		CONFIG = loadConfig(configPath);
+
+		// Kaiten config: per-GPU profiles, auto-loaded from config/kaiten/
+		net.kaiten.config.KaitenConfig.INSTANCE.init(FabricLoader.getInstance().getConfigDir());
+
 		Platform.init();
 
 		Renderer.register(VulkanModRenderer.INSTANCE);

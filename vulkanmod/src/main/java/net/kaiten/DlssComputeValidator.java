@@ -1,4 +1,4 @@
-package net.vulkanmod.dlss;
+package net.kaiten;
 
 import net.vulkanmod.vulkan.Vulkan;
 import net.vulkanmod.vulkan.device.DeviceManager;
@@ -23,7 +23,7 @@ import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.vulkan.VK10.*;
 
 /**
- * Autonomous GPU validation of the motion-vector reprojection — no screen, no eyes.
+ * Autonomous GPU validation of the motion-vector reprojection â€” no screen, no eyes.
  *
  * Runs the {@code motion_vectors_cs.comp} compute shader over a synthetic per-pixel depth
  * buffer (storage buffer in), reads the motion-vector output back (storage buffer out), and
@@ -158,7 +158,7 @@ public final class DlssComputeValidator {
                     float e = Math.abs(gx - expected.x) + Math.abs(gy - expected.y);
                     maxErr = Math.max(maxErr, e);
                     // Tolerance = float32 inverse-VP round-trip precision (GPU FMA vs CPU
-                    // rounding diverge by ~1e-4 UV — sub-pixel), same bound as DlssSelfTest.
+                    // rounding diverge by ~1e-4 UV â€” sub-pixel), same bound as DlssSelfTest.
                     if (e > 1e-3f) mismatches++;
                 }
             }
@@ -166,7 +166,7 @@ public final class DlssComputeValidator {
             LOGGER.info("[DLSS ComputeValidator] {}  GPU vs CPU over {} px: mismatches={} maxErr={}",
                     ok ? "PASS" : "FAIL", N, mismatches, String.format("%.2e", maxErr));
         } catch (Throwable t) {
-            LOGGER.error("[DLSS ComputeValidator] FAIL — {}", t.toString());
+            LOGGER.error("[DLSS ComputeValidator] FAIL â€” {}", t.toString());
         } finally {
             if (pipeline != 0) vkDestroyPipeline(device, pipeline, null);
             if (descPool != 0) vkDestroyDescriptorPool(device, descPool, null);

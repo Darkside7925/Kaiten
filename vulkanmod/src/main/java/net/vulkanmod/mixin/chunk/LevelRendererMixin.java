@@ -108,7 +108,7 @@ public abstract class LevelRendererMixin {
     private void dlssDebugOverlay(GraphicsResourceAllocator graphicsResourceAllocator, DeltaTracker deltaTracker,
                                   boolean bl, Camera camera, Matrix4f modelView, Matrix4f projection, Matrix4f matrix4f,
                                   GpuBufferSlice gpuBufferSlice, Vector4f vector4f, boolean bl2, CallbackInfo ci) {
-        net.vulkanmod.dlss.DlssDebugOverlay.render();
+        net.kaiten.DlssDebugOverlay.render();
     }
 
     @Overwrite

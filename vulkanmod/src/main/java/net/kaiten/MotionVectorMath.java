@@ -1,11 +1,11 @@
-package net.vulkanmod.dlss;
+package net.kaiten;
 
 import org.joml.Matrix4f;
 import org.joml.Vector2f;
 import org.joml.Vector4f;
 
 /**
- * The camera-only (static-geometry) motion-vector reprojection — the exact math the GPU
+ * The camera-only (static-geometry) motion-vector reprojection â€” the exact math the GPU
  * motion-vector shader will run, kept here in pure Java so it can be validated headlessly
  * before (and independently of) the shader.
  *
@@ -15,7 +15,7 @@ import org.joml.Vector4f;
  *
  * <p>Conventions (match this renderer): UV in [0,1] with v=0 at the top; depth in [0,1]
  * (near=0, far=1, NOT reversed-Z); clip NDC xy in [-1,1]. The returned vector is in UV space
- * (prevUV − curUV); it is scaled into Streamline's [-1,1] mvec range at tagging time.
+ * (prevUV âˆ’ curUV); it is scaled into Streamline's [-1,1] mvec range at tagging time.
  */
 public final class MotionVectorMath {
     private MotionVectorMath() {}
@@ -33,7 +33,7 @@ public final class MotionVectorMath {
     }
 
     /**
-     * Camera-only motion vector for a pixel, in UV space: prevUV − curUV.
+     * Camera-only motion vector for a pixel, in UV space: prevUV âˆ’ curUV.
      * Static camera (prevVP == curVP) yields ~(0,0) for every pixel and depth.
      */
     public static Vector2f computeMotionVectorUV(float u, float v, float depth,

@@ -40,7 +40,8 @@ if (MCDLSS_WITH_STREAMLINE)
         src/sl_manager.cpp
         src/sl_dlss_sr.cpp
         src/sl_reflex.cpp
-        # src/sl_dlss_g.cpp  src/tagging.cpp  (added per phase)
+        src/sl_dlss_g.cpp
+        # src/tagging.cpp  (added per phase)
     )
 endif()
 
@@ -68,4 +69,12 @@ set_target_properties(mcdlss_native PROPERTIES PREFIX "")
 # MSVC: be strict but not pedantic about JNI's C-linkage exports.
 if (MSVC)
     target_compile_options(mcdlss_native PRIVATE /W3 /EHsc)
+    # Work around corrupt user32.lib in Windows SDK 10.0.26100.0 x64 by
+    # pointing at a locally regenerated copy first. The shim directory
+    # is created by tools/build_native.ps1; if missing the build simply
+    # falls through to the normal lib path (which may fail the link).
+    set(SDK_SHIM "${CMAKE_CURRENT_BINARY_DIR}/sdk-shim/Lib/10.0.26100.0/um/x64")
+    if (EXISTS "${SDK_SHIM}/user32.lib")
+        target_link_directories(mcdlss_native PRIVATE "${SDK_SHIM}")
+    endif()
 endif()

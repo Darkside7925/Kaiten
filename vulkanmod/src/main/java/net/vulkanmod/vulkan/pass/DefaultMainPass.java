@@ -103,17 +103,39 @@ public class DefaultMainPass implements MainPass {
         Renderer.getInstance().endRenderPass(commandBuffer);
 
         if (this.mainFramebuffer == Renderer.getInstance().getSwapChain()) {
+            VulkanImage color = this.mainFramebuffer.getColorAttachment();
+            VulkanImage depth = this.mainFramebuffer.getDepthAttachment();
+            int w = this.mainFramebuffer.getWidth();
+            int h = this.mainFramebuffer.getHeight();
+
             // DLSS-SR (DLAA), gated -Dmcdlss.dlss: AA/upscale the frame + composite back, before present.
             try {
-                net.vulkanmod.dlss.DlssSuperResolution.render(commandBuffer,
-                        this.mainFramebuffer.getColorAttachment(), this.mainFramebuffer.getDepthAttachment(),
-                        this.mainFramebuffer.getWidth(), this.mainFramebuffer.getHeight());
+                net.kaiten.DlssSuperResolution.render(commandBuffer, color, depth, w, h);
             } catch (Throwable t) {
-                net.vulkanmod.dlss.NativeBridge.LOGGER.warn("DLSS-SR stage error: {}", t.toString());
+                net.kaiten.NativeBridge.LOGGER.warn("DLSS-SR stage error: {}", t.toString());
+            }
+
+            // DLSS Frame Generation, gated -Dmcdlss.fg: AI-interpolates frames. FG must
+            // run AFTER SR (if both are active SR upscales first) and BEFORE the present
+            // layout transition. When FG is active, the Streamline interposer owns the
+            // present call â€” we only transition to GENERAL (not PRESENT_SRC_KHR).
+            boolean fgActive = false;
+            try {
+                net.kaiten.DlssFrameGeneration.render(commandBuffer, color, depth, null, w, h);
+                fgActive = net.kaiten.NativeBridge.frameGenActive;
+            } catch (Throwable t) {
+                net.kaiten.NativeBridge.LOGGER.warn("DLSS-FG stage error: {}", t.toString());
             }
 
             try (MemoryStack stack = MemoryStack.stackPush()) {
-                this.mainFramebuffer.getColorAttachment().transitionImageLayout(stack, commandBuffer, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+                if (fgActive) {
+                    // FG writes the interpolated frame to the backbuffer; leave in GENERAL
+                    // so the interposer can read it during present. SL handles the final
+                    // transition to PRESENT_SRC_KHR internally.
+                    color.transitionImageLayout(stack, commandBuffer, VK_IMAGE_LAYOUT_GENERAL);
+                } else {
+                    color.transitionImageLayout(stack, commandBuffer, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+                }
             }
         }
 

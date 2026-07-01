@@ -1,4 +1,4 @@
-package net.vulkanmod.dlss;
+package net.kaiten;
 
 import com.mojang.blaze3d.platform.Window;
 import net.minecraft.client.Minecraft;
@@ -17,8 +17,8 @@ import org.apache.logging.log4j.Logger;
  * wired once the DLSS-SR evaluate path exists (Phase 3), so by default this is invisible
  * and changes nothing about how the frame looks.
  *
- * <p>Depth convention for this renderer (verified): clip-space Z in [0,1], near→0 far→1,
- * NOT reversed-Z, infinite far plane. → Streamline {@code depthInverted = false}.
+ * <p>Depth convention for this renderer (verified): clip-space Z in [0,1], nearâ†’0 farâ†’1,
+ * NOT reversed-Z, infinite far plane. â†’ Streamline {@code depthInverted = false}.
  *
  * <p>All access is on the render thread; no synchronization needed.
  */
@@ -46,7 +46,7 @@ public final class DlssFrameState {
     private static int renderHeight = 0;
     private static long frameCounter = 0;
 
-    // Debug: L1 norm of (currentVP - previousVP) — ~0 when camera is still, >0 when it moves.
+    // Debug: L1 norm of (currentVP - previousVP) â€” ~0 when camera is still, >0 when it moves.
     private static float lastVpDelta = 0.0f;
     private static final float[] tmpCur = new float[16];
     private static final float[] tmpPrev = new float[16];
@@ -65,7 +65,7 @@ public final class DlssFrameState {
         mvScaleBuf.putFloat(4, 1.0f);
     }
 
-    /** Master switch — when false (default for now) nothing here affects rendering. */
+    /** Master switch â€” when false (default for now) nothing here affects rendering. */
     public static boolean enabled = false;
     /** Whether the computed jitter should actually be applied to the projection (Phase 3+). */
     public static boolean applyJitter = false;
@@ -79,7 +79,7 @@ public final class DlssFrameState {
 
     /**
      * Call once at the start of each frame, before the world's view-projection is set.
-     * Rolls current→previous and advances the jitter phase.
+     * Rolls currentâ†’previous and advances the jitter phase.
      */
     public static void beginFrame() {
         Window w = Minecraft.getInstance().getWindow();
@@ -92,6 +92,25 @@ public final class DlssFrameState {
 
         // Phase 4: Reflex sleep + simulation-start marker at the very top of the frame.
         NativeBridge.reflexFrameStart((int) frameCounter);
+
+        // Pull the current camera matrices directly from VulkanMod's render system.
+        // These were set during the *previous* frame's applyMVP call, which is exactly
+        // what we need: this frame's "previous" VP = last frame's VP.
+        try {
+            var mvBuf = net.vulkanmod.vulkan.VRenderSystem.getModelViewMatrix();
+            var pBuf  = net.vulkanmod.vulkan.VRenderSystem.getProjectionMatrix();
+            if (mvBuf != null && pBuf != null) {
+                Matrix4f mv = new Matrix4f(mvBuf.buffer.asFloatBuffer());
+                Matrix4f proj = new Matrix4f(pBuf.buffer.asFloatBuffer());
+                Matrix4f vp = new Matrix4f(proj).mul(mv);  // clip = P * MV
+                // Store as "currentViewProj" (this frame's camera VP).
+                currentViewProj.set(vp);
+                currentProjection.set(proj);
+                currentSetThisFrame = true;
+            }
+        } catch (Throwable ignored) {
+            // VRenderSystem might not be initialized yet — that's fine, skip.
+        }
 
         // Roll the view-projection: this frame's "previous" is last frame's "current".
         if (currentSetThisFrame) {
@@ -151,7 +170,7 @@ public final class DlssFrameState {
         }
     }
 
-    /** L1 norm of (currentVP − previousVP) for the latest frame; ~0 when the camera is still. */
+    /** L1 norm of (currentVP âˆ’ previousVP) for the latest frame; ~0 when the camera is still. */
     public static float lastViewProjectionDelta() { return lastVpDelta; }
 
     /**

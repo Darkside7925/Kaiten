@@ -234,10 +234,10 @@ public class Renderer {
     public void beginFrame() {
         this.recursion++;
 
-        // DLSS Phase 2: roll current→previous view-projection + advance jitter, once per real frame.
+        // DLSS Phase 2: roll currentâ†’previous view-projection + advance jitter, once per real frame.
         if (this.recursion <= 1) {
             try {
-                net.vulkanmod.dlss.DlssFrameState.beginFrame();
+                net.kaiten.DlssFrameState.beginFrame();
             } catch (Throwable t) {
                 // non-fatal: DLSS temporal state is best-effort
             }
@@ -390,15 +390,15 @@ public class Renderer {
 
             vkResetFences(device, inFlightFences.get(currentFrame));
 
-            int dlssFi = (int) net.vulkanmod.dlss.DlssFrameState.frameCounter();
-            net.vulkanmod.dlss.NativeBridge.reflexMarker(net.vulkanmod.dlss.NativeBridge.PCL_SIM_END, dlssFi);
-            net.vulkanmod.dlss.NativeBridge.reflexMarker(net.vulkanmod.dlss.NativeBridge.PCL_RENDER_SUBMIT_START, dlssFi);
+            int dlssFi = (int) net.kaiten.DlssFrameState.frameCounter();
+            net.kaiten.NativeBridge.reflexMarker(net.kaiten.NativeBridge.PCL_SIM_END, dlssFi);
+            net.kaiten.NativeBridge.reflexMarker(net.kaiten.NativeBridge.PCL_RENDER_SUBMIT_START, dlssFi);
 
             if ((vkResult = vkQueueSubmit(DeviceManager.getGraphicsQueue().vkQueue(), submitInfo, inFlightFences.get(currentFrame))) != VK_SUCCESS) {
                 vkResetFences(device, inFlightFences.get(currentFrame));
                 throw new RuntimeException("Failed to submit draw command buffer: %s".formatted(VkResult.decode(vkResult)));
             }
-            net.vulkanmod.dlss.NativeBridge.reflexMarker(net.vulkanmod.dlss.NativeBridge.PCL_RENDER_SUBMIT_END, dlssFi);
+            net.kaiten.NativeBridge.reflexMarker(net.kaiten.NativeBridge.PCL_RENDER_SUBMIT_END, dlssFi);
 
             // Semaphore waited command buffers will be reset right after waiting this command buffer's fence
             Synchronization.INSTANCE.scheduleCbReset();
@@ -414,9 +414,9 @@ public class Renderer {
 
                 presentInfo.pImageIndices(stack.ints(imageIndex));
 
-                net.vulkanmod.dlss.NativeBridge.reflexMarker(net.vulkanmod.dlss.NativeBridge.PCL_PRESENT_START, dlssFi);
+                net.kaiten.NativeBridge.reflexMarker(net.kaiten.NativeBridge.PCL_PRESENT_START, dlssFi);
                 vkResult = vkQueuePresentKHR(DeviceManager.getPresentQueue().vkQueue(), presentInfo);
-                net.vulkanmod.dlss.NativeBridge.reflexMarker(net.vulkanmod.dlss.NativeBridge.PCL_PRESENT_END, dlssFi);
+                net.kaiten.NativeBridge.reflexMarker(net.kaiten.NativeBridge.PCL_PRESENT_END, dlssFi);
 
                 if (vkResult == VK_ERROR_OUT_OF_DATE_KHR || vkResult == VK_SUBOPTIMAL_KHR || swapChainUpdate) {
                     swapChainUpdate = true;

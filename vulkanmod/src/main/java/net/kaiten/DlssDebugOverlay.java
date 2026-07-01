@@ -1,4 +1,4 @@
-package net.vulkanmod.dlss;
+package net.kaiten;
 
 import com.google.gson.JsonObject;
 import net.vulkanmod.render.shader.ShaderLoadUtil;
@@ -18,7 +18,7 @@ import org.lwjgl.vulkan.VkCommandBuffer;
 /**
  * Phase 2 debug overlay: draws the camera-only motion-vector FIELD as a full-screen color
  * visualization (R/G = motion x/y around neutral grey). Flat-depth for now (no depth-buffer
- * sampling) — proves matrix capture + GPU reprojection visually: smooth gradient when the
+ * sampling) â€” proves matrix capture + GPU reprojection visually: smooth gradient when the
  * camera moves, flat grey when still.
  *
  * Toggle with {@code -Dmcdlss.overlay=true} (or flip {@link #enabled} at runtime).
@@ -61,7 +61,7 @@ public final class DlssDebugOverlay {
             VRenderSystem.depthMask = prevDepthMask;
         } catch (Throwable t) {
             failed = true;
-            LOGGER.error("[DLSS Overlay] draw failed — disabling overlay: {}", t.toString());
+            LOGGER.error("[DLSS Overlay] draw failed â€” disabling overlay: {}", t.toString());
         }
     }
 
