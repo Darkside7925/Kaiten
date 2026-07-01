@@ -49,15 +49,18 @@ public final class DlssSuperResolution {
             return;
         }
 
-        // Read quality mode from Kaiten profile.  NOTE: until we implement a true
-        // low-res render pass, we always evaluate in DLAA mode (AI-AA at native res).
-        // The profile mode is recorded for future use when the low-res pass exists.
+        // Read quality mode from Kaiten profile.
         int mode = NativeBridge.DLSS_DLAA;
-        int renderW = w, renderH = h;   // always native res — all buffers are at window size
+        int renderW = w, renderH = h;
         try { var p = net.kaiten.config.KaitenConfig.INSTANCE.getActiveProfile(); if (p != null) {
             int desiredMode = p.dlssMode;
-            if (desiredMode != NativeBridge.DLSS_DLAA) {
-                LOGGER.info("[DLSS-SR] profile mode={} — using DLAA until low-res render pass is implemented", modeName(desiredMode));
+            if (desiredMode != NativeBridge.DLSS_DLAA && net.kaiten.KaitenRenderState.isUpscaling()) {
+                mode = desiredMode;
+                renderW = net.kaiten.KaitenRenderState.renderWidth();
+                renderH = net.kaiten.KaitenRenderState.renderHeight();
+                LOGGER.info("[DLSS-SR] upscaling mode={} {}x{} -> {}x{}", modeName(mode), renderW, renderH, w, h);
+            } else if (desiredMode != NativeBridge.DLSS_DLAA) {
+                LOGGER.info("[DLSS-SR] profile mode={} - using DLAA until low-res render pass is implemented", modeName(desiredMode));
             }
         }} catch (Throwable ignored) {}
 
@@ -140,5 +143,71 @@ public final class DlssSuperResolution {
 
     private static String modeName(int m) {
         return switch (m) { case 4->"UltraPerf"; case 1->"Perf"; case 2->"Balanced"; case 3->"Quality"; case 5->"UltraQuality"; default->"DLAA"; };
+    }
+
+    /** Called from DefaultMainPass.end() when KaitenRenderState.isUpscaling(). */
+    public static void renderUpscale(VkCommandBuffer cmd,
+            VulkanImage lowResColor, VulkanImage lowResDepth,
+            int renderW, int renderH,
+            VulkanImage outputColor, int displayW, int displayH) {
+        if (!enabled || failed) return;
+        if (!NativeBridge.isStreamlineInitialized() || !NativeBridge.dlssSupported) return;
+        if (!DlssFrameState.hasPreviousFrame()) return;
+
+        int mode = NativeBridge.DLSS_DLAA;
+        try { var p = net.kaiten.config.KaitenConfig.INSTANCE.getActiveProfile(); if (p != null) mode = p.dlssMode; } catch (Throwable ignored) {}
+        if (mode == NativeBridge.DLSS_DLAA) { render(cmd, outputColor, lowResDepth, displayW, displayH); return; }
+
+        try {
+            ensureUpscaleTargets(displayW, displayH, outputColor.format);
+
+            try (MemoryStack stack = stackPush()) {
+                lowResColor.transitionImageLayout(stack, cmd, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                lowResDepth.transitionImageLayout(stack, cmd, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                mvZero.transitionImageLayout(stack, cmd, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                output.transitionImageLayout(stack, cmd, VK_IMAGE_LAYOUT_GENERAL);
+            }
+
+            DlssFrameState.fillSrConstants(consts, 0f, 0f, 1f, 1f);
+
+            long[] handles = { lowResColor.getId(), lowResColor.getImageView(),
+                    output.getId(), output.getImageView(),
+                    lowResDepth.getId(), lowResDepth.getImageView(),
+                    mvZero.getId(), mvZero.getImageView() };
+            int[] layouts = { VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+            int[] formats = { lowResColor.format, outputColor.format, lowResDepth.format, VK_FORMAT_R16G16_SFLOAT };
+
+            int r = NativeBridge.slDlssEvaluateNative(0, (int) DlssFrameState.frameCounter(), cmd.address(),
+                    mode, displayW, displayH, renderW, renderH, handles, layouts, formats, consts);
+
+            if (r != 0) { failed = true; LOGGER.error("[DLSS-SR] upscale failed ({})", safeName(r)); return; }
+
+            try (MemoryStack stack = stackPush()) {
+                output.transitionImageLayout(stack, cmd, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+                outputColor.transitionImageLayout(stack, cmd, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+                VkImageCopy.Buffer region = VkImageCopy.calloc(1, stack);
+                region.srcSubresource().aspectMask(VK_IMAGE_ASPECT_COLOR_BIT).mipLevel(0).baseArrayLayer(0).layerCount(1);
+                region.dstSubresource().aspectMask(VK_IMAGE_ASPECT_COLOR_BIT).mipLevel(0).baseArrayLayer(0).layerCount(1);
+                region.extent().set(displayW, displayH, 1);
+                vkCmdCopyImage(cmd, output.getId(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        outputColor.getId(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, region);
+            }
+
+            if (framesRun++ == 0) LOGGER.info("[DLSS-SR] {} upscaling: {}x{} -> {}x{}", modeName(mode), renderW, renderH, displayW, displayH);
+            else if (framesRun % 300 == 0) LOGGER.info("[DLSS-SR] {} frames: {} ({}x{}->{}x{})", modeName(mode), framesRun, renderW, renderH, displayW, displayH);
+        } catch (Throwable t) { failed = true; LOGGER.error("[DLSS-SR] upscale failed: {}", t.toString()); }
+    }
+
+    private static void ensureUpscaleTargets(int w, int h, int colorFormat) {
+        if (output != null && width == w && height == h) return;
+        freeTargets();
+        width = w; height = h;
+        int outUsage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        output = VulkanImage.builder(w, h).setFormat(colorFormat).setUsage(outUsage)
+                .setLinearFiltering(false).setClamp(true).createVulkanImage();
+        int mvUsage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        mvZero = VulkanImage.builder(w, h).setFormat(VK_FORMAT_R16G16_SFLOAT).setUsage(mvUsage)
+                .setLinearFiltering(false).setClamp(true).createVulkanImage();
     }
 }

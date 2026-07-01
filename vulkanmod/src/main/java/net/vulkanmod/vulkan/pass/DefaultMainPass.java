@@ -86,6 +86,11 @@ public class DefaultMainPass implements MainPass {
     @Override
     public void begin(VkCommandBuffer commandBuffer, MemoryStack stack) {
         Framebuffer framebuffer = this.mainFramebuffer;
+        // When DLSS/FSR upscaling is active, render the world to the low-res
+        // framebuffer instead of the swapchain. The upscale happens in end().
+        if (net.kaiten.KaitenRenderState.isUpscaling()) {
+            framebuffer = net.kaiten.KaitenRenderState.getRenderFramebuffer(this.mainFramebuffer);
+        }
 
         VulkanImage colorAttachment = framebuffer.getColorAttachment();
         colorAttachment.transitionImageLayout(stack, commandBuffer, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
@@ -101,8 +106,17 @@ public class DefaultMainPass implements MainPass {
     @Override
     public void end(VkCommandBuffer commandBuffer) {
         Renderer.getInstance().endRenderPass(commandBuffer);
+        // --- DLSS/FSR upscaling: switch to swapchain for DLSS + present ---
+        if (net.kaiten.KaitenRenderState.isUpscaling()) {
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                VulkanImage swapColor = this.mainFramebuffer.getColorAttachment();
+                swapColor.transitionImageLayout(stack, commandBuffer, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+                Renderer.getInstance().beginRenderPass(this.mainRenderPass, this.mainFramebuffer);
+                Renderer.setViewport(0, 0, this.mainFramebuffer.getWidth(), this.mainFramebuffer.getHeight(), stack);
+            }
+        }
 
-        if (this.mainFramebuffer == Renderer.getInstance().getSwapChain()) {
+        if (this.mainFramebuffer == Renderer.getInstance().getSwapChain() || net.kaiten.KaitenRenderState.isUpscaling()) {
             VulkanImage color = this.mainFramebuffer.getColorAttachment();
             VulkanImage depth = this.mainFramebuffer.getDepthAttachment();
             int w = this.mainFramebuffer.getWidth();

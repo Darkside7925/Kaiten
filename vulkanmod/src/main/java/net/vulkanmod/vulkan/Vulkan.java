@@ -179,6 +179,11 @@ public class Vulkan {
             net.kaiten.config.KaitenConfig.INSTANCE.onDeviceReady(gpuName);
             // Register Kaiten as a tab in VulkanMod's Video Settings sidebar.
             net.kaiten.config.KaitenOptions.register();
+            // Initialize upscaling render state (DLSS/FSR).
+            net.kaiten.KaitenRenderState.update(
+                    Renderer.getInstance().getSwapChain().getWidth(),
+                    Renderer.getInstance().getSwapChain().getHeight(),
+                    net.kaiten.config.KaitenConfig.INSTANCE.getActiveProfile().dlssMode);
         } catch (Throwable t) {
             net.kaiten.NativeBridge.LOGGER.warn("Kaiten config init failed: {}", t.toString());
         }

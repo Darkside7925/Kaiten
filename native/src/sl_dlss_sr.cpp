@@ -197,19 +197,19 @@ Java_net_kaiten_NativeBridge_slDlssEvaluateNative(JNIEnv* env, jclass,
     r = slSetConstants(consts, *token, vp);
     if (r != sl::Result::eOk) { std::fprintf(stderr, "[mcdlss] slSetConstants=%d\n", (int)r); return (jint)r; }
 
-    // All buffers are at the OUTPUT (window) resolution since we do post-process
-    // DLAA-style (no separate low-res render pass yet). Use outW/outH for all
-    // resource dimensions so NGX matches the actual buffer contents.
-    sl::Resource colorIn  = vkResource(h[0], h[1], lay[0], outW, outH, fmt[0]);
+    // Input resources (color, depth, MV) are at render resolution;
+    // output is at display resolution. For DLAA mode these are identical.
+    sl::Resource colorIn  = vkResource(h[0], h[1], lay[0], renderW, renderH, fmt[0]);
     sl::Resource colorOut = vkResource(h[2], h[3], lay[1], outW, outH, fmt[1]);
-    sl::Resource depth    = vkResource(h[4], h[5], lay[2], outW, outH, fmt[2]);
-    sl::Resource mvec     = vkResource(h[6], h[7], lay[3], outW, outH, fmt[3]);
-    sl::Extent fullExt{0, 0, (uint32_t)outW, (uint32_t)outH};
+    sl::Resource depth    = vkResource(h[4], h[5], lay[2], renderW, renderH, fmt[2]);
+    sl::Resource mvec     = vkResource(h[6], h[7], lay[3], renderW, renderH, fmt[3]);
+    sl::Extent renderExt{0, 0, (uint32_t)renderW, (uint32_t)renderH};
+    sl::Extent outExt{0, 0, (uint32_t)outW, (uint32_t)outH};
     sl::ResourceTag tags[] = {
-        sl::ResourceTag(&colorIn,  sl::kBufferTypeScalingInputColor,  sl::ResourceLifecycle::eOnlyValidNow, &fullExt),
-        sl::ResourceTag(&colorOut, sl::kBufferTypeScalingOutputColor, sl::ResourceLifecycle::eOnlyValidNow, &fullExt),
-        sl::ResourceTag(&depth,    sl::kBufferTypeDepth,              sl::ResourceLifecycle::eValidUntilPresent, &fullExt),
-        sl::ResourceTag(&mvec,     sl::kBufferTypeMotionVectors,      sl::ResourceLifecycle::eOnlyValidNow, &fullExt),
+        sl::ResourceTag(&colorIn,  sl::kBufferTypeScalingInputColor,  sl::ResourceLifecycle::eOnlyValidNow, &renderExt),
+        sl::ResourceTag(&colorOut, sl::kBufferTypeScalingOutputColor, sl::ResourceLifecycle::eOnlyValidNow, &outExt),
+        sl::ResourceTag(&depth,    sl::kBufferTypeDepth,              sl::ResourceLifecycle::eValidUntilPresent, &renderExt),
+        sl::ResourceTag(&mvec,     sl::kBufferTypeMotionVectors,      sl::ResourceLifecycle::eOnlyValidNow, &renderExt),
     };
     r = slSetTag(vp, tags, 4, cmd);
     if (r != sl::Result::eOk) { std::fprintf(stderr, "[mcdlss] slSetTag=%d\n", (int)r); return (jint)r; }

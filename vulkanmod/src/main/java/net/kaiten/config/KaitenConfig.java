@@ -221,6 +221,13 @@ public final class KaitenConfig {
         try {
             // SR
             net.kaiten.DlssSuperResolution.enabled = activeProfile.dlssEnabled;
+            // Update upscaling render state (render resolution, low-res framebuffer)
+            try {
+                net.kaiten.KaitenRenderState.update(
+                        net.minecraft.client.Minecraft.getInstance().getWindow().getWidth(),
+                        net.minecraft.client.Minecraft.getInstance().getWindow().getHeight(),
+                        activeProfile.dlssMode);
+            } catch (Throwable ignored) {}
 
             // FG
             if (activeProfile.fgEnabled && NativeBridge.frameGenSupported && NativeBridge.frameGenConfigured) {
