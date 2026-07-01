@@ -230,12 +230,20 @@ public class DefaultMainPass implements MainPass {
 
     @Override
     public GpuTexture getColorAttachment() {
-        return this.colorAttachmentTextures[this.imageIdxSupplier.getAsInt()];
+        int idx = this.imageIdxSupplier.getAsInt();
+        if (idx < 0 || idx >= this.colorAttachmentTextures.length) {
+            idx = 0; // fallback during transient resize/init states
+        }
+        return this.colorAttachmentTextures[idx];
     }
 
     @Override
     public GpuTextureView getColorAttachmentView() {
-        return this.colorAttachmentTextureViews[this.imageIdxSupplier.getAsInt()];
+        int idx = this.imageIdxSupplier.getAsInt();
+        if (idx < 0 || idx >= this.colorAttachmentTextureViews.length) {
+            idx = 0;
+        }
+        return this.colorAttachmentTextureViews[idx];
     }
 
     @Override
