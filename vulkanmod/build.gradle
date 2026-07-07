@@ -20,8 +20,11 @@ loom {
 	runs {
 		client {
 			client()
-			// FG disabled: Frame Generation with zero motion vectors produces flickering
-			// garbage interpolated frames. Re-enable only after a real MV pass exists.
+			// FG disabled: swapchain proxy routing works (SL's vkCreateSwapchainKHR hook fires
+			// and correctly requests 6 buffers), but DLSS-G's frame-pacer then requests a
+			// dedicated queue our device never provisions (only 1 queue/family is created) and
+			// crashes in sl.common.dll. Re-enable once DeviceManager reserves the extra
+			// graphics/compute queues DLSS-G's FeatureRequirements report (vkQ(gfx:1 cmp:2 of:1)).
 			vmArgs("-Dmcdlss.dlss=true")
 		}
 	}

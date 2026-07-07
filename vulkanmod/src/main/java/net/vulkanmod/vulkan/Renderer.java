@@ -281,8 +281,14 @@ public class Renderer {
                 IntBuffer pImageIndex = stack.mallocInt(1);
                 long semaphore = imageAvailableSemaphores.get(currentFrame);
 
-                int vkResult = vkAcquireNextImageKHR(device, swapChain.getId(), VUtil.UINT64_MAX,
+                int vkResult;
+                if (net.kaiten.NativeBridge.useSlProxies) {
+                    vkResult = net.kaiten.NativeBridge.slProxyAcquireNextImageKHR(device.address(), swapChain.getId(),
+                            VUtil.UINT64_MAX, semaphore, VK_NULL_HANDLE, MemoryUtil.memAddress(pImageIndex));
+                } else {
+                    vkResult = vkAcquireNextImageKHR(device, swapChain.getId(), VUtil.UINT64_MAX,
                                                      semaphore, VK_NULL_HANDLE, pImageIndex);
+                }
 
                 if (vkResult == VK_SUBOPTIMAL_KHR || vkResult == VK_ERROR_OUT_OF_DATE_KHR || swapChainUpdate) {
                     swapChainUpdate = true;
@@ -415,7 +421,12 @@ public class Renderer {
                 presentInfo.pImageIndices(stack.ints(imageIndex));
 
                 net.kaiten.NativeBridge.reflexMarker(net.kaiten.NativeBridge.PCL_PRESENT_START, dlssFi);
-                vkResult = vkQueuePresentKHR(DeviceManager.getPresentQueue().vkQueue(), presentInfo);
+                if (net.kaiten.NativeBridge.useSlProxies) {
+                    vkResult = net.kaiten.NativeBridge.slProxyQueuePresentKHR(
+                            DeviceManager.getPresentQueue().vkQueue().address(), presentInfo.address());
+                } else {
+                    vkResult = vkQueuePresentKHR(DeviceManager.getPresentQueue().vkQueue(), presentInfo);
+                }
                 net.kaiten.NativeBridge.reflexMarker(net.kaiten.NativeBridge.PCL_PRESENT_END, dlssFi);
 
                 if (vkResult == VK_ERROR_OUT_OF_DATE_KHR || vkResult == VK_SUBOPTIMAL_KHR || swapChainUpdate) {

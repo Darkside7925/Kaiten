@@ -10,6 +10,7 @@ import net.vulkanmod.vulkan.queue.Queue;
 import net.vulkanmod.vulkan.texture.SamplerManager;
 import net.vulkanmod.vulkan.texture.VulkanImage;
 import org.lwjgl.system.MemoryStack;
+import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.vulkan.*;
 
 import java.nio.IntBuffer;
@@ -79,7 +80,7 @@ public class SwapChain extends Framebuffer {
             if (extent.width() == 0 && extent.height() == 0) {
                 if (this.swapChainId != VK_NULL_HANDLE) {
                     this.swapChainImages.forEach(image -> vkDestroyImageView(device, image.getImageView(), null));
-                    vkDestroySwapchainKHR(device, this.swapChainId, null);
+                    destroySwapchain(device, this.swapChainId);
                     this.swapChainId = VK_NULL_HANDLE;
                 }
 
@@ -129,21 +130,18 @@ public class SwapChain extends Framebuffer {
 
             if (this.swapChainId != VK_NULL_HANDLE) {
                 this.swapChainImages.forEach(image -> vkDestroyImageView(device, image.getImageView(), null));
-                vkDestroySwapchainKHR(device, this.swapChainId, null);
+                destroySwapchain(device, this.swapChainId);
             }
 
             LongBuffer pSwapChain = stack.longs(VK_NULL_HANDLE);
 
-            int result = vkCreateSwapchainKHR(device, createInfo, null, pSwapChain);
-            Vulkan.checkResult(result, "Failed to create swap chain");
+            this.swapChainId = createSwapchain(device, createInfo, pSwapChain);
 
-            this.swapChainId = pSwapChain.get(0);
-
-            vkGetSwapchainImagesKHR(device, this.swapChainId, imageCount, null);
+            getSwapchainImages(device, this.swapChainId, imageCount, null);
 
             LongBuffer pSwapchainImages = stack.mallocLong(imageCount.get(0));
 
-            vkGetSwapchainImagesKHR(device, this.swapChainId, imageCount, pSwapchainImages);
+            getSwapchainImages(device, this.swapChainId, imageCount, pSwapchainImages);
 
             this.swapChainImages = new ArrayList<>(imageCount.get(0));
             this.hasImages = true;
@@ -215,10 +213,44 @@ public class SwapChain extends Framebuffer {
             this.FBO_map.clear();
         }
 
-        vkDestroySwapchainKHR(device, this.swapChainId, null);
+        destroySwapchain(device, this.swapChainId);
         this.swapChainImages.forEach(image -> vkDestroyImageView(device, image.getImageView(), null));
 
         this.depthAttachment.free();
+    }
+
+    // --- M2: swapchain lifecycle routed through SL's interposer proxies when active, so DLSS-G's
+    // present hook (which only attaches to a proxy-created swapchain in manual-hooking mode) sees
+    // it. Falls back to the direct LWJGL calls whenever proxies aren't resolved. ---
+
+    private static long createSwapchain(VkDevice device, VkSwapchainCreateInfoKHR createInfo, LongBuffer pSwapChain) {
+        if (net.kaiten.NativeBridge.useSlProxies) {
+            int result = net.kaiten.NativeBridge.slProxyCreateSwapchainKHR(device.address(), createInfo.address(), MemoryUtil.memAddress(pSwapChain));
+            Vulkan.checkResult(result, "Failed to create swap chain (SL proxy)");
+        } else {
+            int result = vkCreateSwapchainKHR(device, createInfo, null, pSwapChain);
+            Vulkan.checkResult(result, "Failed to create swap chain");
+        }
+        return pSwapChain.get(0);
+    }
+
+    private static void destroySwapchain(VkDevice device, long swapchain) {
+        if (swapchain == VK_NULL_HANDLE) return;
+        if (net.kaiten.NativeBridge.useSlProxies) {
+            net.kaiten.NativeBridge.slProxyDestroySwapchainKHR(device.address(), swapchain);
+        } else {
+            vkDestroySwapchainKHR(device, swapchain, null);
+        }
+    }
+
+    private static void getSwapchainImages(VkDevice device, long swapchain, IntBuffer pCount, LongBuffer pImages) {
+        if (net.kaiten.NativeBridge.useSlProxies) {
+            int result = net.kaiten.NativeBridge.slProxyGetSwapchainImagesKHR(device.address(), swapchain,
+                    MemoryUtil.memAddress(pCount), pImages == null ? 0L : MemoryUtil.memAddress(pImages));
+            Vulkan.checkResult(result, "Failed to get swap chain images (SL proxy)");
+        } else {
+            vkGetSwapchainImagesKHR(device, swapchain, pCount, pImages);
+        }
     }
 
     private VkSurfaceFormatKHR getFormat(VkSurfaceFormatKHR.Buffer availableFormats) {

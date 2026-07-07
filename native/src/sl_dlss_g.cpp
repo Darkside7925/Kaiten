@@ -174,7 +174,7 @@ Java_net_kaiten_NativeBridge_slDlssGEvaluateNative(JNIEnv* env, jclass,
     sl::Extent fullExt{0, 0, (uint32_t)width, (uint32_t)height};
 
     sl::Resource uiColor;
-    sl::ResourceTag tags[4];
+    sl::ResourceTag tags[5];
     tags[0] = sl::ResourceTag(&hudLess, sl::kBufferTypeHUDLessColor,  sl::ResourceLifecycle::eValidUntilPresent, &fullExt);
     tags[1] = sl::ResourceTag(&depth,   sl::kBufferTypeDepth,         sl::ResourceLifecycle::eValidUntilPresent, &fullExt);
     tags[2] = sl::ResourceTag(&mvec,    sl::kBufferTypeMotionVectors, sl::ResourceLifecycle::eValidUntilPresent, &fullExt);
@@ -182,6 +182,11 @@ Java_net_kaiten_NativeBridge_slDlssGEvaluateNative(JNIEnv* env, jclass,
         uiColor = vkResource(h[6], h[7], lay[3], width, height, fmt[3]);
         tags[3] = sl::ResourceTag(&uiColor, sl::kBufferTypeUIColorAndAlpha, sl::ResourceLifecycle::eValidUntilPresent, &fullExt);
     }
+    // Backbuffer tag: a null native pointer is valid here (ProgrammingGuideDLSS_G.md:278) — it
+    // tells SL which extent the proxy-created swapchain presents at, needed for present interception.
+    sl::Resource backbuffer(sl::ResourceType::eTex2d, nullptr);
+    tags[tagCount] = sl::ResourceTag(&backbuffer, sl::kBufferTypeBackbuffer, sl::ResourceLifecycle::eValidUntilPresent, &fullExt);
+    tagCount += 1;
 
     sl::Result r = slSetTag(vp, tags, tagCount, cmd);
     if (r != sl::Result::eOk) {

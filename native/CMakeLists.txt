@@ -41,6 +41,7 @@ if (MCDLSS_WITH_STREAMLINE)
         src/sl_dlss_sr.cpp
         src/sl_reflex.cpp
         src/sl_dlss_g.cpp
+        src/sl_proxies.cpp
         # src/tagging.cpp  (added per phase)
     )
 endif()

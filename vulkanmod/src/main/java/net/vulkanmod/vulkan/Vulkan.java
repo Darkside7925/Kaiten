@@ -200,11 +200,20 @@ public class Vulkan {
     }
 
     public static void waitIdle() {
-        vkDeviceWaitIdle(DeviceManager.vkDevice);
+        deviceWaitIdle();
+    }
+
+    /** vkDeviceWaitIdle, routed through SL's proxy when FG present-interception is active. */
+    private static void deviceWaitIdle() {
+        if (net.kaiten.NativeBridge.useSlProxies) {
+            net.kaiten.NativeBridge.slProxyDeviceWaitIdle(DeviceManager.vkDevice.address());
+        } else {
+            vkDeviceWaitIdle(DeviceManager.vkDevice);
+        }
     }
 
     public static void cleanUp() {
-        vkDeviceWaitIdle(DeviceManager.vkDevice);
+        deviceWaitIdle();
 
         // Phase 1: shut Streamline down before tearing down the Vulkan device.
         try {

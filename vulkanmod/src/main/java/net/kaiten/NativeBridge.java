@@ -23,7 +23,7 @@ public final class NativeBridge {
     public static final Logger LOGGER = LogManager.getLogger("VulkanMod-DLSS");
 
     /** Must match MCDLSS_ABI_VERSION in native/include/mcdlss.h. Bumped on any JNI signature change. */
-    public static final int EXPECTED_ABI_VERSION = 3;
+    public static final int EXPECTED_ABI_VERSION = 4;
 
     private static final String LIB_NAME = "mcdlss_native";
 
@@ -144,6 +144,42 @@ public final class NativeBridge {
      */
     public static native int slDlssGEvaluateNative(int frameIndex, long cmdBuffer, int width, int height,
             long[] handles, int[] layouts, int[] formats, float[] consts);
+
+    // --- M2 (FG present interception) native methods ---
+    // In manual-hooking mode, DLSS-G only attaches to a swapchain created through SL's own
+    // proxies (see sl_proxies.cpp). These wrap the mandatory hooks from sl_hooks.h, taking raw
+    // addresses of LWJGL-allocated Vulkan structs so the native side never needs vulkan.h.
+
+    /** Resolves SL's Vulkan swapchain/present proxies for this device. Returns proxies resolved (6 = all). */
+    public static native int slProxyInitNative(long device);
+    public static native int slProxyCreateSwapchainKHR(long device, long pCreateInfoAddr, long pSwapchainAddr);
+    public static native void slProxyDestroySwapchainKHR(long device, long swapchain);
+    public static native int slProxyGetSwapchainImagesKHR(long device, long swapchain, long pCountAddr, long pImagesAddr);
+    public static native int slProxyAcquireNextImageKHR(long device, long swapchain, long timeout, long semaphore, long fence, long pIndexAddr);
+    public static native int slProxyQueuePresentKHR(long queue, long pPresentInfoAddr);
+    public static native int slProxyDeviceWaitIdle(long device);
+
+    /** True once SL's swapchain/present proxies are resolved and FG present-interception is wired in. */
+    public static volatile boolean useSlProxies = false;
+
+    /**
+     * Resolves SL's Vulkan proxies for {@code device}. Gated on FG being supported and
+     * {@code -Dmcdlss.fg=true} — without it, DLSS-G never attaches to our swapchain and there's
+     * no reason to route present calls through SL. Best-effort: failure just leaves
+     * {@link #useSlProxies} false and callers fall back to the direct LWJGL Vulkan calls.
+     */
+    public static synchronized void setupSlProxies(long device) {
+        useSlProxies = false;
+        if (!frameGenSupported || !Boolean.getBoolean("mcdlss.fg")) return;
+        try {
+            int resolved = slProxyInitNative(device);
+            useSlProxies = (resolved == 6);
+            LOGGER.info("SL interposer proxies: {}/6 resolved{}", Math.max(resolved, 0),
+                    useSlProxies ? " - routing swapchain/present through SL" : " - falling back to direct Vulkan calls");
+        } catch (Throwable t) {
+            LOGGER.warn("SL proxy init error: {}", t.toString());
+        }
+    }
 
     // sl::DLSSGMode values.
     public static final int DLSSG_OFF = 0, DLSSG_ON = 1, DLSSG_AUTO = 2, DLSSG_DYNAMIC = 3;
@@ -392,6 +428,9 @@ public final class NativeBridge {
             LOGGER.warn("slSetVulkanInfo error: {}", t.toString());
             return;
         }
+
+        // M2: resolve SL's swapchain/present proxies so DLSS-G's present hook can attach.
+        setupSlProxies(device);
 
         // Phase 4: enable Reflex low-latency (mandatory dependency for Frame Generation).
         setupReflex(REFLEX_LOW_LATENCY);
