@@ -19,6 +19,42 @@ public final class KaitenRenderState {
     private static boolean upscaling = false;
     private static int currentMode = NativeBridge.DLSS_DLAA;
     private static String currentBackend = "dlss";  // "dlss" or "fsr"
+    private static boolean resizeHookRegistered = false;
+
+    /**
+     * Lazily register the window-resize hook once the Renderer exists, and immediately sync
+     * the render state to the current window size. Safe to call every frame — it's a no-op
+     * after the first success. This is the reliable activation path: it can't run during
+     * device init (Renderer may still be null there), so we defer it to the render loop.
+     */
+    public static void ensureResizeHook() {
+        if (resizeHookRegistered) return;
+        try {
+            var renderer = net.vulkanmod.vulkan.Renderer.getInstance();
+            if (renderer == null) return; // Renderer not up yet — try again next frame.
+
+            renderer.addOnResizeCallback(KaitenRenderState::updateFromActiveProfile);
+            resizeHookRegistered = true;
+            // The window may already be at its final size (initial resize already fired),
+            // so run one update now to activate upscaling immediately.
+            updateFromActiveProfile();
+        } catch (Throwable t) {
+            NativeBridge.LOGGER.warn("[Kaiten] resize-hook registration failed: {}", t.toString());
+        }
+    }
+
+    /** Re-evaluate render resolution from the active profile + current window size. */
+    private static void updateFromActiveProfile() {
+        try {
+            var p = net.kaiten.config.KaitenConfig.INSTANCE.getActiveProfile();
+            if (p == null) return;
+            String be = p.backend != null ? p.backend : "dlss";
+            var w = net.minecraft.client.Minecraft.getInstance().getWindow();
+            update(w.getWidth(), w.getHeight(), p.dlssMode, be);
+        } catch (Throwable t) {
+            NativeBridge.LOGGER.warn("[Kaiten] render-state update failed: {}", t.toString());
+        }
+    }
 
     /** Whether true upscaling (low-res render → upscale → native) is active. */
     public static boolean isUpscaling() { return upscaling; }
@@ -37,6 +73,10 @@ public final class KaitenRenderState {
         displayHeight = displayH;
         currentMode = dlssMode;
         currentBackend = backend != null ? backend : "dlss";
+
+        // Keep SR enabled flags in sync with the active backend.
+        net.kaiten.DlssSuperResolution.enabled = "dlss".equals(currentBackend);
+        net.kaiten.KaitenFSR.enabled = "fsr".equals(currentBackend);
 
         if ("fsr".equals(currentBackend)) {
             // FSR: use quality preset scale factors (same as DLSS modes)

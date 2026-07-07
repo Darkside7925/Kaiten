@@ -47,6 +47,18 @@ public class Initializer implements ClientModInitializer {
 			net.kaiten.DlssSelfTest.run();
 		}
 
+		// Iris-on-Vulkan port (milestone 1): auto-compile a shaderpack at startup when
+		// -Diris.autocompile=<packName> is set. Proves pack load + SPIR-V compile end-to-end.
+		String irisPack = System.getProperty("iris.autocompile");
+		if (irisPack != null && !irisPack.isBlank()) {
+			try {
+				var dir = net.kaiten.iris.IrisShaderLoader.defaultShaderpacksDir();
+				net.kaiten.iris.IrisShaderLoader.loadAndCompile(dir, irisPack);
+			} catch (Throwable t) {
+				LOGGER.warn("[Iris] auto-compile failed: {}", t.toString());
+			}
+		}
+
 		var configPath = FabricLoader.getInstance()
 				.getConfigDir()
 				.resolve("vulkanmod_settings.json");

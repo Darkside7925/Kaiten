@@ -88,6 +88,7 @@ public final class DlssFrameGeneration {
                 }
             }
 
+            // Jitter: pass (0,0) while projection jitter is disabled.
             DlssFrameState.fillSrConstants(consts, 0f, 0f, 1f, 1f);
 
             // Tag: HUD-less color (swapchain color), depth, MV. No UI alpha buffer

@@ -85,6 +85,10 @@ public class DefaultMainPass implements MainPass {
 
     @Override
     public void begin(VkCommandBuffer commandBuffer, MemoryStack stack) {
+        // Lazily register the resize hook (no-op after first success) so upscaling activates
+        // once the Renderer is alive — device-init is too early to register it reliably.
+        net.kaiten.KaitenRenderState.ensureResizeHook();
+
         Framebuffer framebuffer = this.mainFramebuffer;
         // When DLSS/FSR upscaling is active, render the world to the low-res
         // framebuffer instead of the swapchain. The upscale happens in end().

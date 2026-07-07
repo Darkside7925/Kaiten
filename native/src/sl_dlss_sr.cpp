@@ -191,6 +191,8 @@ Java_net_kaiten_NativeBridge_slDlssEvaluateNative(JNIEnv* env, jclass,
     consts.cameraRight = sl::float3(1, 0, 0);
     consts.cameraFwd = sl::float3(0, 0, 1);
     consts.depthInverted = sl::Boolean::eFalse;
+    // The MV buffer now contains real per-pixel camera motion (DlssMotionVectors compute pass),
+    // so camera motion IS included in the motion vectors.
     consts.cameraMotionIncluded = sl::Boolean::eTrue;
     consts.motionVectors3D = sl::Boolean::eFalse;
     consts.reset = sl::Boolean::eFalse;

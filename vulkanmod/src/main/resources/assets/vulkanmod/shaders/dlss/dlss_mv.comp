@@ -1,0 +1,45 @@
+#version 450
+
+// Per-pixel camera motion vectors for DLSS Super Resolution.
+//
+// For each pixel of the (render-resolution) depth buffer: reconstruct the world position
+// from (uv, depth) via the inverse current view-projection, reproject it with the previous
+// frame's view-projection, and write the screen-space displacement (prevUV - curUV) in UV
+// space. DLSS reads this to reproject temporal history correctly during camera movement.
+//
+// This is the GPU form of net.kaiten.MotionVectorMath (unit-tested on CPU). The matrices
+// passed in are the UN-jittered camera transforms (jitter is handled separately by DLSS).
+//
+// Depth convention (this renderer): Vulkan [0,1], near->0 far->1, NOT reversed-Z.
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(binding = 0) uniform sampler2D depthTex;              // render-res depth
+layout(binding = 1, rg16f) uniform writeonly image2D mvOut;  // render-res motion (UV space)
+
+layout(push_constant) uniform PC {
+    mat4 invCurrentVP;   // inverse of current frame's (un-jittered) P*MV
+    mat4 previousVP;     // previous frame's (un-jittered) P*MV
+};
+
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(mvOut);
+    if (p.x >= size.x || p.y >= size.y) return;
+
+    vec2 uv = (vec2(p) + 0.5) / vec2(size);
+    float depth = texture(depthTex, uv).r;
+
+    // Current clip-space position (ndc.xy in [-1,1], depth in [0,1]).
+    vec2 ndc = uv * 2.0 - 1.0;
+    vec4 clip = vec4(ndc, depth, 1.0);
+
+    vec4 world = invCurrentVP * clip;
+    world /= world.w;
+
+    vec4 prevClip = previousVP * vec4(world.xyz, 1.0);
+    vec2 prevUV = (prevClip.xy / prevClip.w) * 0.5 + 0.5;
+
+    // Motion from current pixel to where the surface was last frame, in UV space.
+    imageStore(mvOut, p, vec4(prevUV - uv, 0.0, 0.0));
+}

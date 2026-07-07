@@ -20,7 +20,9 @@ loom {
 	runs {
 		client {
 			client()
-			vmArgs("-Dmcdlss.dlss=true", "-Dmcdlss.fg=true")
+			// FG disabled: Frame Generation with zero motion vectors produces flickering
+			// garbage interpolated frames. Re-enable only after a real MV pass exists.
+			vmArgs("-Dmcdlss.dlss=true")
 		}
 	}
 }

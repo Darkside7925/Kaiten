@@ -181,18 +181,10 @@ public class Vulkan {
             net.kaiten.config.KaitenOptions.register();
             // Init FSR compute pipelines (safe — compiles but doesn't enable).
             net.kaiten.KaitenFSR.init();
-            // Initialize upscaling render state (DLSS/FSR). May fail if Renderer not ready yet — retried on settings apply.
-            try {
-                var profile = net.kaiten.config.KaitenConfig.INSTANCE.getActiveProfile();
-                String backend = profile != null && profile.backend != null ? profile.backend : "dlss";
-                int mode = profile != null ? profile.dlssMode : 0;
-                net.kaiten.KaitenRenderState.update(
-                        Renderer.getInstance().getSwapChain().getWidth(),
-                        Renderer.getInstance().getSwapChain().getHeight(),
-                        mode, backend);
-            } catch (Throwable t) {
-                // Renderer not yet initialized — fine, applyActiveProfile already set SR/FG flags
-            }
+            // Compile the DLSS motion-vector compute pipeline (used by the upscaling path).
+            net.kaiten.DlssMotionVectors.init();
+            // Upscaling render-state activation is handled lazily by KaitenRenderState.ensureResizeHook(),
+            // called from the render loop once the Renderer exists (it's null this early in device init).
         } catch (Throwable t) {
             net.kaiten.NativeBridge.LOGGER.warn("Kaiten config init failed: {}", t.toString());
         }

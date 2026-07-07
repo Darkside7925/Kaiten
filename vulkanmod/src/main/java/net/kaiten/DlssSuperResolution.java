@@ -28,6 +28,14 @@ public final class DlssSuperResolution {
     public static boolean enabled = Boolean.getBoolean("mcdlss.dlss");
     private static boolean failed = false;
 
+    // --- Live-tunable knobs for finding the correct DLSS conventions (adjust via /dlss tune ...) ---
+    /** Multiplier applied to motion-vector magnitude reported to DLSS. Try 1, 0.5, 2. */
+    public static volatile float mvScale = 1.0f;
+    /** Sign applied to motion vectors (+1 = current→previous UV delta, -1 = flipped). */
+    public static volatile float mvSign = 1.0f;
+    /** Whether to run the motion-vector compute pass (off = zero MV). */
+    public static volatile boolean useMotionVectors = true;
+
     private static VulkanImage output;   // DLSS output at display resolution
     private static VulkanImage mvZero;   // zero MV: at render resolution for upscale, display for DLAA
     private static int width, height;    // display resolution
@@ -77,6 +85,8 @@ public final class DlssSuperResolution {
                 output.transitionImageLayout(stack, cmd, VK_IMAGE_LAYOUT_GENERAL);
             }
 
+            // Jitter: pass (0,0) while projection jitter is disabled (applyJitter=false).
+            // When projection jitter is re-enabled, pass DlssFrameState.jitterPixelsX/Y() here.
             DlssFrameState.fillSrConstants(consts, 0f, 0f, 1f, 1f);
 
             long[] handles = {
@@ -144,6 +154,8 @@ public final class DlssSuperResolution {
         int mvUsage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
         mvZero = VulkanImage.builder(w, h).setFormat(VK_FORMAT_R16G16_SFLOAT).setUsage(mvUsage)
                 .setLinearFiltering(false).setClamp(true).createVulkanImage();
+        // DLAA: render = display, so phase count is based on display resolution.
+        DlssFrameState.updateJitterPhaseCount(w, h);
     }
 
     public static void freeTargets() {
@@ -175,14 +187,31 @@ public final class DlssSuperResolution {
         try {
             ensureUpscaleTargets(displayW, displayH, renderW, renderH, outputColor.format);
 
+            // Depth readable; MV writable (GENERAL) for the motion-vector compute pass.
             try (MemoryStack stack = stackPush()) {
                 lowResColor.transitionImageLayout(stack, cmd, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
                 lowResDepth.transitionImageLayout(stack, cmd, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-                mvZero.transitionImageLayout(stack, cmd, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                mvZero.transitionImageLayout(stack, cmd, VK_IMAGE_LAYOUT_GENERAL);
                 output.transitionImageLayout(stack, cmd, VK_IMAGE_LAYOUT_GENERAL);
             }
 
-            DlssFrameState.fillSrConstants(consts, 0f, 0f, 1f, 1f);
+            // Compute real per-pixel camera motion vectors from depth into the MV image.
+            // This is what makes DLSS upscaling stable during camera movement.
+            if (useMotionVectors) {
+                DlssMotionVectors.record(cmd, lowResDepth, mvZero, renderW, renderH);
+            }
+
+            // MV now readable by the DLSS evaluate.
+            try (MemoryStack stack = stackPush()) {
+                mvZero.transitionImageLayout(stack, cmd, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            }
+
+            // Jitter (in pixels) must match what was applied to the world projection; 0 when off.
+            float jx = DlssFrameState.applyJitter ? DlssFrameState.jitterPixelsX() : 0f;
+            float jy = DlssFrameState.applyJitter ? DlssFrameState.jitterPixelsY() : 0f;
+            // Effective MV scale (0 disables motion contribution). mvSign flips reprojection direction.
+            float eff = useMotionVectors ? (mvScale * mvSign) : 0f;
+            DlssFrameState.fillSrConstants(consts, jx, jy, eff, eff);
 
             long[] handles = { lowResColor.getId(), lowResColor.getImageView(),
                     output.getId(), output.getImageView(),
@@ -233,5 +262,7 @@ public final class DlssSuperResolution {
         int mvUsage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
         mvZero = VulkanImage.builder(rw, rh).setFormat(VK_FORMAT_R16G16_SFLOAT).setUsage(mvUsage)
                 .setLinearFiltering(false).setClamp(true).createVulkanImage();
+        // Scale jitter phase count to upscale ratio: DLSS recommends 8*(outW/renderW)^2.
+        DlssFrameState.updateJitterPhaseCount(rw, rh);
     }
 }

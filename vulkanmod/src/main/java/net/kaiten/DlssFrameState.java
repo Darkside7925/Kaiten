@@ -67,8 +67,8 @@ public final class DlssFrameState {
 
     /** Master switch â€” when false (default for now) nothing here affects rendering. */
     public static boolean enabled = false;
-    /** Whether the computed jitter should actually be applied to the projection (Phase 3+). */
-    public static boolean applyJitter = false;
+    /** Whether the computed jitter is applied to the world projection (perspective only). */
+    public static boolean applyJitter = true;
 
     private static final Logger LOGGER = LogManager.getLogger("VulkanMod-DLSS");
     private static final boolean DEBUG = Boolean.getBoolean("mcdlss.debug");
@@ -231,6 +231,50 @@ public final class DlssFrameState {
 
     public static void setJitterPhaseCount(int n) {
         if (n >= 1 && n <= 64) jitterPhaseCount = n;
+    }
+
+    /** Scale jitter phase count to the upscale ratio. DLSS recommends 8*(outW/renderW)^2 phases. */
+    public static void updateJitterPhaseCount(int renderW, int renderH) {
+        if (renderW <= 0 || renderH <= 0) return;
+        float ratio = (float)(renderWidth * renderHeight) / (float)(renderW * renderH);
+        int phases = Math.round(8.0f * ratio);
+        phases = Math.min(64, Math.max(8, phases));
+        if (phases != jitterPhaseCount) {
+            jitterPhaseCount = phases;
+            jitterIndex = jitterIndex % jitterPhaseCount;
+        }
+    }
+
+    /** Jitter offset in NDC space for x (range [-0.5/renderW, +0.5/renderW]). */
+    public static float jitterNdcX(int renderW) {
+        return renderW > 0 ? jitterX / (float)renderW : 0f;
+    }
+
+    /** Jitter offset in NDC space for y (range [-0.5/renderH, +0.5/renderH]). */
+    public static float jitterNdcY(int renderH) {
+        return renderH > 0 ? jitterY / (float)renderH : 0f;
+    }
+
+    /**
+     * Apply sub-pixel jitter to a perspective projection matrix in-place.
+     *
+     * <p>The jitter goes on the z→x and z→y terms (JOML column-major m20/m21) so it produces a
+     * constant screen-space offset after the perspective divide, independent of depth. A jitter
+     * of one pixel spans {@code 2/dimension} in NDC (which is [-1,1]). The Y term is negated to
+     * match this renderer's flipped-Y Vulkan viewport.
+     *
+     * <p>NOTE: a previous version modified m02/m12 (the x→z / y→z terms) which corrupts the depth
+     * output of the projection — that is what made jittered upscaling break. m20/m21 is correct.
+     *
+     * <p>Must be applied to the matrix uploaded for rasterization only; DLSS receives the
+     * un-jittered matrices plus {@link #jitterPixelsX()}/{@link #jitterPixelsY()} separately.
+     */
+    public static void applyJitterToProjection(Matrix4f proj, int renderW, int renderH) {
+        if (!applyJitter || renderW <= 0 || renderH <= 0) return;
+        float jx = 2.0f * jitterX / (float) renderW;
+        float jy = 2.0f * jitterY / (float) renderH;
+        proj.m20(proj.m20() + jx);
+        proj.m21(proj.m21() - jy); // flipped-Y viewport
     }
 
     public static void reset() {

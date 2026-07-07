@@ -132,12 +132,27 @@ public abstract class VRenderSystem {
     }
 
     public static void applyMVP(Matrix4f MV, Matrix4f P) {
-        applyModelViewMatrix(MV);
-        applyProjectionMatrix(P);
-        calculateMVP();
+        // Discriminate the world render (perspective, m33==0) from GUI/HUD (orthographic, m33==1).
+        // Only the world feeds DLSS, so only it is captured and jittered.
+        boolean perspective = Math.abs(P.m33()) < 1.0e-6f;
 
-        // DLSS Phase 2: capture this frame's world view-projection for motion vectors.
-        net.kaiten.DlssFrameState.setViewProjection(MV, P);
+        Matrix4f Pupload = P;
+        if (perspective) {
+            // Capture the UN-jittered camera VP for DLSS motion vectors + constants.
+            net.kaiten.DlssFrameState.setViewProjection(MV, P);
+
+            // Apply sub-pixel jitter to a COPY used only for rasterization, when upscaling.
+            if (net.kaiten.DlssFrameState.applyJitter && net.kaiten.KaitenRenderState.isUpscaling()) {
+                Pupload = new Matrix4f(P);
+                net.kaiten.DlssFrameState.applyJitterToProjection(Pupload,
+                        net.kaiten.KaitenRenderState.renderWidth(),
+                        net.kaiten.KaitenRenderState.renderHeight());
+            }
+        }
+
+        applyModelViewMatrix(MV);
+        applyProjectionMatrix(Pupload);
+        calculateMVP();
     }
 
     public static void applyModelViewMatrix(Matrix4f mat) {
