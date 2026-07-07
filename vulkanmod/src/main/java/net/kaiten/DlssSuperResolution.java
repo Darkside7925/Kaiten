@@ -81,13 +81,24 @@ public final class DlssSuperResolution {
             try (MemoryStack stack = stackPush()) {
                 color.transitionImageLayout(stack, cmd, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
                 depth.transitionImageLayout(stack, cmd, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-                mvZero.transitionImageLayout(stack, cmd, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                mvZero.transitionImageLayout(stack, cmd, VK_IMAGE_LAYOUT_GENERAL);
                 output.transitionImageLayout(stack, cmd, VK_IMAGE_LAYOUT_GENERAL);
             }
 
-            // Jitter: pass (0,0) while projection jitter is disabled (applyJitter=false).
-            // When projection jitter is re-enabled, pass DlssFrameState.jitterPixelsX/Y() here.
-            DlssFrameState.fillSrConstants(consts, 0f, 0f, 1f, 1f);
+            // Compute real per-pixel camera motion vectors from depth into the MV image (native
+            // resolution here, since DLAA has no render/display resolution split).
+            if (useMotionVectors) {
+                DlssMotionVectors.record(cmd, depth, mvZero, w, h);
+            }
+
+            try (MemoryStack stack = stackPush()) {
+                mvZero.transitionImageLayout(stack, cmd, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            }
+
+            float jx = DlssFrameState.applyJitter ? DlssFrameState.jitterPixelsX() : 0f;
+            float jy = DlssFrameState.applyJitter ? DlssFrameState.jitterPixelsY() : 0f;
+            float eff = useMotionVectors ? (mvScale * mvSign) : 0f;
+            DlssFrameState.fillSrConstants(consts, jx, jy, eff, eff);
 
             long[] handles = {
                     color.getId(), color.getImageView(),

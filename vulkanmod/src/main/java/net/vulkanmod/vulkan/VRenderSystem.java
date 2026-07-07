@@ -141,12 +141,14 @@ public abstract class VRenderSystem {
             // Capture the UN-jittered camera VP for DLSS motion vectors + constants.
             net.kaiten.DlssFrameState.setViewProjection(MV, P);
 
-            // Apply sub-pixel jitter to a COPY used only for rasterization, when upscaling.
-            if (net.kaiten.DlssFrameState.applyJitter && net.kaiten.KaitenRenderState.isUpscaling()) {
+            // Apply sub-pixel jitter to a COPY used only for rasterization. Needed whenever DLSS-SR
+            // is active (DLAA runs jittered-AA at native res too, not just the upscale path).
+            if (net.kaiten.DlssFrameState.applyJitter && net.kaiten.DlssSuperResolution.enabled) {
                 Pupload = new Matrix4f(P);
-                net.kaiten.DlssFrameState.applyJitterToProjection(Pupload,
-                        net.kaiten.KaitenRenderState.renderWidth(),
-                        net.kaiten.KaitenRenderState.renderHeight());
+                boolean upscaling = net.kaiten.KaitenRenderState.isUpscaling();
+                int jw = upscaling ? net.kaiten.KaitenRenderState.renderWidth() : net.kaiten.KaitenRenderState.displayWidth();
+                int jh = upscaling ? net.kaiten.KaitenRenderState.renderHeight() : net.kaiten.KaitenRenderState.displayHeight();
+                net.kaiten.DlssFrameState.applyJitterToProjection(Pupload, jw, jh);
             }
         }
 
