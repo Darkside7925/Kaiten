@@ -20,11 +20,11 @@ loom {
 	runs {
 		client {
 			client()
-			// FG disabled: swapchain proxy routing works (SL's vkCreateSwapchainKHR hook fires
-			// and correctly requests 6 buffers), but DLSS-G's frame-pacer then requests a
-			// dedicated queue our device never provisions (only 1 queue/family is created) and
-			// crashes in sl.common.dll. Re-enable once DeviceManager reserves the extra
-			// graphics/compute queues DLSS-G's FeatureRequirements report (vkQ(gfx:1 cmp:2 of:1)).
+			// FG disabled: the queue-provisioning crash is fixed (DeviceManager now reserves
+			// dedicated graphics/compute queues for SL's frame-pacer) and DLSS-G does activate,
+			// but it still runs on DlssFrameGeneration's zero-MV fallback (M3 hasn't wired the
+			// real M1 motion vectors into the FG path yet) - confirmed to flicker badly on
+			// screen. Re-enable only after M3 feeds real MVs into DlssFrameGeneration.render().
 			vmArgs("-Dmcdlss.dlss=true")
 		}
 	}

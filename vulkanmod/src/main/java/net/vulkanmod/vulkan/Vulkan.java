@@ -163,11 +163,14 @@ public class Vulkan {
         // Phase 3: hand SL the Vulkan device + log DLSS optimal render resolutions.
         try {
             Queue.QueueFamilyIndices q = Queue.getQueueFamilies();
+            // Use the dedicated queue indices reserved for SL in createLogicalDevice() (0 if the
+            // hardware family had no spare queueCount - SL then shares index 0 with the engine).
             net.kaiten.NativeBridge.setupDlssDevice(
                     instance.address(),
                     DeviceManager.physicalDevice.address(),
                     DeviceManager.vkDevice.address(),
-                    q.graphicsFamily, 0, q.computeFamily, 0);
+                    q.graphicsFamily, DeviceManager.slGraphicsQueueIndex,
+                    q.computeFamily, DeviceManager.slComputeQueueIndex);
         } catch (Throwable t) {
             net.kaiten.NativeBridge.LOGGER.warn("DLSS device setup failed: {}", t.toString());
         }

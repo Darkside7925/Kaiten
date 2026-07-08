@@ -151,6 +151,13 @@ public abstract class DeviceManager {
         return currentDevice;
     }
 
+    // DLSS-G's frame-pacer needs its own dedicated graphics/compute queues, distinct from the
+    // engine's (FeatureRequirements report vkQ(gfx:1 cmp:2 of:1)). 0 means "no dedicated queue
+    // reserved - share index 0 with the engine", set by createLogicalDevice() when the
+    // hardware family has spare queueCount to reserve extra indices for.
+    public static int slGraphicsQueueIndex = 0;
+    public static int slComputeQueueIndex = 0;
+
     public static void createLogicalDevice() {
         try (MemoryStack stack = stackPush()) {
 
@@ -158,13 +165,50 @@ public abstract class DeviceManager {
 
             int[] uniqueQueueFamilies = indices.unique();
 
+            // How many queues each unique family actually supports in hardware, so we know how
+            // many extra (beyond the engine's own index 0) we can safely request.
+            int[] familyQueueCounts = new int[uniqueQueueFamilies.length];
+            {
+                IntBuffer qCount = stack.ints(0);
+                vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, qCount, null);
+                VkQueueFamilyProperties.Buffer allFamilies = VkQueueFamilyProperties.malloc(qCount.get(0), stack);
+                vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, qCount, allFamilies);
+                for (int i = 0; i < uniqueQueueFamilies.length; i++) {
+                    familyQueueCounts[i] = allFamilies.get(uniqueQueueFamilies[i]).queueCount();
+                }
+            }
+
+            int[] queueCountPerFamily = new int[uniqueQueueFamilies.length];
+            java.util.Arrays.fill(queueCountPerFamily, 1);
+            slGraphicsQueueIndex = 0;
+            slComputeQueueIndex = 0;
+            int gfxPos = indexOfFamily(uniqueQueueFamilies, indices.graphicsFamily);
+            int cmpPos = indexOfFamily(uniqueQueueFamilies, indices.computeFamily);
+            if (gfxPos >= 0 && familyQueueCounts[gfxPos] > queueCountPerFamily[gfxPos]) {
+                slGraphicsQueueIndex = queueCountPerFamily[gfxPos];
+                queueCountPerFamily[gfxPos]++;
+            }
+            if (cmpPos >= 0 && familyQueueCounts[cmpPos] > queueCountPerFamily[cmpPos]) {
+                slComputeQueueIndex = queueCountPerFamily[cmpPos];
+                queueCountPerFamily[cmpPos]++;
+                // DLSS-G asks for 2 dedicated compute queues; reserve a 2nd if there's room
+                // (best-effort - SL degrades gracefully internally if it only gets 1).
+                if (familyQueueCounts[cmpPos] > queueCountPerFamily[cmpPos]) {
+                    queueCountPerFamily[cmpPos]++;
+                }
+            }
+            Initializer.LOGGER.info("[DLSS] queue reservation: gfxIndex={} cmpIndex={} (family queue counts: {})",
+                    slGraphicsQueueIndex, slComputeQueueIndex, java.util.Arrays.toString(familyQueueCounts));
+
             VkDeviceQueueCreateInfo.Buffer queueCreateInfos = VkDeviceQueueCreateInfo.calloc(uniqueQueueFamilies.length, stack);
 
             for (int i = 0; i < uniqueQueueFamilies.length; i++) {
                 VkDeviceQueueCreateInfo queueCreateInfo = queueCreateInfos.get(i);
                 queueCreateInfo.sType(VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO);
                 queueCreateInfo.queueFamilyIndex(uniqueQueueFamilies[i]);
-                queueCreateInfo.pQueuePriorities(stack.floats(1.0f));
+                float[] priorities = new float[queueCountPerFamily[i]];
+                java.util.Arrays.fill(priorities, 1.0f);
+                queueCreateInfo.pQueuePriorities(stack.floats(priorities));
             }
 
             VkPhysicalDeviceVulkan11Features deviceVulkan11Features = VkPhysicalDeviceVulkan11Features.calloc(stack);
@@ -257,6 +301,11 @@ public abstract class DeviceManager {
             presentQueue = new PresentQueue(stack, indices.presentFamily);
             computeQueue = new ComputeQueue(stack, indices.computeFamily);
         }
+    }
+
+    private static int indexOfFamily(int[] uniqueFamilies, int family) {
+        for (int i = 0; i < uniqueFamilies.length; i++) if (uniqueFamilies[i] == family) return i;
+        return -1;
     }
 
     private static PointerBuffer getRequiredExtensions() {
