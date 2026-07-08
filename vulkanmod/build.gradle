@@ -20,11 +20,12 @@ loom {
 	runs {
 		client {
 			client()
-			// FG disabled: the queue-provisioning crash is fixed (DeviceManager now reserves
-			// dedicated graphics/compute queues for SL's frame-pacer) and DLSS-G does activate,
-			// but it still runs on DlssFrameGeneration's zero-MV fallback (M3 hasn't wired the
-			// real M1 motion vectors into the FG path yet) - confirmed to flicker badly on
-			// screen. Re-enable only after M3 feeds real MVs into DlssFrameGeneration.render().
+			// FG disabled: real motion vectors are now confirmed feeding FG (motionVectors=real
+			// in logs, fixing the flicker), but DLSS-G still toggles enabled/disabled
+			// unpredictably shortly after activation, and numPresented never rises past 1 in
+			// these tests. Root cause: the "HUD-less" color tag is actually the full swapchain
+			// color (HUD baked in) - proper HUD-less capture is the remaining M3 work. Re-enable
+			// once that lands and FG stays stable.
 			vmArgs("-Dmcdlss.dlss=true")
 		}
 	}

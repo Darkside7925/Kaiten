@@ -164,7 +164,11 @@ public class DefaultMainPass implements MainPass {
             // present call â€” we only transition to GENERAL (not PRESENT_SRC_KHR).
             boolean fgActive = false;
             try {
-                net.kaiten.DlssFrameGeneration.render(commandBuffer, color, depth, null, w, h);
+                // Reuse the DLAA path's just-computed native-res motion vectors (real camera
+                // motion, not the zero-MV fallback) — null when SR didn't run in native/DLAA
+                // mode this frame, in which case FG falls back to its own zero-MV buffer.
+                net.vulkanmod.vulkan.texture.VulkanImage fgMv = net.kaiten.DlssSuperResolution.nativeMotionVectors();
+                net.kaiten.DlssFrameGeneration.render(commandBuffer, color, depth, fgMv, w, h);
                 fgActive = net.kaiten.NativeBridge.frameGenActive;
             } catch (Throwable t) {
                 net.kaiten.NativeBridge.LOGGER.warn("DLSS-FG stage error: {}", t.toString());

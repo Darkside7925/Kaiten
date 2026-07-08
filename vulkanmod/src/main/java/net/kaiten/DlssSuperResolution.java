@@ -37,12 +37,24 @@ public final class DlssSuperResolution {
     public static volatile boolean useMotionVectors = true;
 
     private static VulkanImage output;   // DLSS output at display resolution
-    private static VulkanImage mvZero;   // zero MV: at render resolution for upscale, display for DLAA
+    private static VulkanImage mvZero;   // real motion vectors: render resolution for upscale, display for DLAA
     private static int width, height;    // display resolution
     private static int renderW, renderH; // render (input) resolution for upscale
     private static long framesRun = 0;
     private static int lastTransientErr = 0;
     private static final float[] consts = new float[40];
+    private static boolean mvIsNativeRes = false; // true after render() (DLAA) populates mvZero at display res
+
+    /**
+     * The most recently computed native-resolution motion-vector image, left in
+     * SHADER_READ_ONLY_OPTIMAL layout, or {@code null} if none is available this frame (SR
+     * disabled/not yet warmed up, or the last MV compute was at render — not display —
+     * resolution, i.e. the upscale path). FG v1 only reuses this in the DLAA/native case,
+     * since its tags are display-resolution.
+     */
+    public static VulkanImage nativeMotionVectors() {
+        return (mvIsNativeRes && useMotionVectors) ? mvZero : null;
+    }
 
     /** Run DLSS on the rendered color (using depth), composite the result back into color. */
     public static void render(VkCommandBuffer cmd, VulkanImage color, VulkanImage depth, int w, int h) {
@@ -156,9 +168,10 @@ public final class DlssSuperResolution {
     }
 
     private static void ensureTargets(int w, int h, int colorFormat) {
-        if (output != null && width == w && height == h) return;
+        mvIsNativeRes = true;
+        if (output != null && width == w && height == h && renderW == 0) return;
         freeTargets();
-        width = w; height = h;
+        width = w; height = h; renderW = 0; renderH = 0;
         int outUsage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
         output = VulkanImage.builder(w, h).setFormat(colorFormat).setUsage(outUsage)
                 .setLinearFiltering(false).setClamp(true).createVulkanImage();
@@ -262,6 +275,7 @@ public final class DlssSuperResolution {
     }
 
     private static void ensureUpscaleTargets(int dw, int dh, int rw, int rh, int colorFormat) {
+        mvIsNativeRes = false;
         if (output != null && width == dw && height == dh && renderW == rw && renderH == rh) return;
         freeTargets();
         width = dw; height = dh; renderW = rw; renderH = rh;

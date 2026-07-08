@@ -127,11 +127,13 @@ public final class DlssFrameGeneration {
 
             NativeBridge.frameGenActive = true;
 
-            if (framesRun++ == 0) LOGGER.info("[DLSS-G] Frame Generation running, {}x{}", w, h);
+            if (framesRun++ == 0) LOGGER.info("[DLSS-G] Frame Generation running, {}x{}, motionVectors={}",
+                    w, h, (mv != null) ? "real" : "zero-fallback");
             else if (framesRun % 300 == 0) {
                 try {
                     String state = NativeBridge.slDlssGGetStateNative();
-                    LOGGER.info("[DLSS-G] {} frames, state: {}", framesRun, state);
+                    LOGGER.info("[DLSS-G] {} frames, motionVectors={}, state: {}",
+                            framesRun, (mv != null) ? "real" : "zero-fallback", state);
                 } catch (Throwable ignored) {}
             }
         } catch (Throwable t) {
